@@ -1449,6 +1449,78 @@ async def generate_image(request: ImageGenerationRequestModel):
 
 
 # =============================================================================
+# GRAPHICS GENERATION ENDPOINT
+# =============================================================================
+
+class GraphicsGenerationRequestModel(BaseModel):
+    """Request for graphics generation."""
+    graphic_type: str = Field(..., description="Type: headline, quote, metric, cta, infographic")
+    content: Dict[str, Any] = Field(..., description="Type-specific content")
+    company_data: Optional[Dict[str, Any]] = Field(None, description="Company context")
+    project_folder_id: Optional[str] = Field(None, description="Project Drive folder ID")
+    dimensions: Optional[List[int]] = Field([1080, 1350], description="Image dimensions [width, height]")
+
+
+class GraphicsGenerationResponseModel(BaseModel):
+    """Response from graphics generation."""
+    success: bool
+    image_url: Optional[str] = Field(None, description="Public Drive URL or base64 data URI")
+    alt_text: Optional[str] = Field(None, description="Generated alt text")
+    drive_file_id: Optional[str] = Field(None, description="Google Drive file ID")
+    generation_time_seconds: float = Field(0.0, description="Time taken to generate")
+    error: Optional[str] = Field(None, description="Error message if failed")
+
+
+@app.post("/generate-graphics", response_model=GraphicsGenerationResponseModel)
+async def generate_graphics(request: GraphicsGenerationRequestModel):
+    """
+    Generate HTML-based graphics (openfigma style) and convert to PNG.
+    
+    Supports:
+    - headline: Case study style headlines
+    - quote: Testimonial/quote graphics
+    - metric: Statistics/metrics graphics
+    - cta: Call-to-action cards
+    - infographic: Diagram-style infographics
+    
+    Expected duration: 5-10 seconds
+    """
+    try:
+        from .graphics_generator import (
+            GraphicsGenerator,
+            GraphicsGenerationRequest as GraphicsReq,
+        )
+        
+        generator = GraphicsGenerator()
+        
+        graphics_request = GraphicsReq(
+            graphic_type=request.graphic_type,
+            content=request.content,
+            company_data=request.company_data,
+            project_folder_id=request.project_folder_id,
+            dimensions=tuple(request.dimensions) if request.dimensions else (1080, 1350),
+        )
+        
+        result = await generator.generate(graphics_request)
+        
+        return GraphicsGenerationResponseModel(
+            success=result.success,
+            image_url=result.image_url,
+            alt_text=result.alt_text,
+            drive_file_id=result.drive_file_id,
+            generation_time_seconds=result.generation_time_seconds,
+            error=result.error,
+        )
+        
+    except Exception as e:
+        return GraphicsGenerationResponseModel(
+            success=False,
+            generation_time_seconds=0.0,
+            error=str(e),
+        )
+
+
+# =============================================================================
 # TRANSLATION ENDPOINT
 # =============================================================================
 
