@@ -202,16 +202,33 @@ class GraphicsGenerator:
             raise ValueError(f"Unknown graphic type: {request.graphic_type}")
     
     def _generate_headline_html(self, request: GraphicsGenerationRequest) -> str:
-        """Generate headline graphic HTML (case study style)."""
+        """Generate headline graphic HTML (case study style - openfigma quality)."""
         content = request.content
         headline = content.get("headline", "")
         subheadline = content.get("subheadline", "")
+        badge_text = content.get("badge", "Case Study")
         company_name = request.company_data.get("name", "") if request.company_data else ""
+        show_logos = content.get("show_logos", True)
         
-        # Split headline into bold/muted parts
-        parts = headline.split(" ")
         bold_parts = content.get("bold_parts", [])
         muted_parts = content.get("muted_parts", [])
+        
+        logos_html = ""
+        if show_logos and company_name:
+            logos_html = f"""
+  <div class="logos-card">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 6h16M4 12h16M4 18h10"/>
+      </svg>
+      {company_name.upper()}
+    </div>
+    <div class="logo-divider"></div>
+    <div class="logo">
+      <div class="scaile-icon"></div>
+      SCAILE
+    </div>
+  </div>"""
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -224,53 +241,104 @@ class GraphicsGenerator:
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
       font-family: 'Inter', -apple-system, sans-serif;
-      background: #0a0a0b;
+      background: #f8f8f8;
       width: {request.dimensions[0]}px;
       height: {request.dimensions[1]}px;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 80px;
+      padding: 60px 80px 80px;
       position: relative;
-      overflow: hidden;
     }}
     body::before {{
       content: '';
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 800px;
-      height: 600px;
-      background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 20px 20px;
       pointer-events: none;
     }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border: 1px solid #e8e8e8;
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      width: fit-content;
+      margin-bottom: 50px;
+    }}
+    .badge svg {{ width: 20px; height: 20px; }}
     .headline {{
       text-align: center;
-      font-size: 48px;
+      font-size: 56px;
       font-weight: 800;
-      line-height: 1.2;
-      letter-spacing: -0.02em;
-      color: #f5f5f5;
-      z-index: 1;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: auto;
+      padding: 0;
+      max-width: 100%;
     }}
-    .headline .bold {{ color: #f5f5f5; }}
-    .headline .muted {{ color: rgba(255, 255, 255, 0.4); }}
+    .headline .bold {{ color: #1a1a1a; }}
+    .headline .muted {{ color: #b0b0b0; }}
     .subheadline {{
       margin-top: 30px;
       font-size: 24px;
       font-weight: 500;
-      color: rgba(255, 255, 255, 0.6);
+      color: #6b7280;
       text-align: center;
+    }}
+    .logos-card {{
+      background: #f0f0f0;
+      border-radius: 28px;
+      padding: 40px 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+    }}
+    .logo {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a1a1a;
+      letter-spacing: -0.02em;
+    }}
+    .logo-icon {{ width: 32px; height: 32px; }}
+    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
+    .scaile-icon {{
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
     }}
   </style>
 </head>
 <body>
+  <div class="badge">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    {badge_text}
+  </div>
+
   <h1 class="headline">
     {self._format_headline(headline, bold_parts, muted_parts)}
   </h1>
   {f'<p class="subheadline">{subheadline}</p>' if subheadline else ''}
+{logos_html}
 </body>
 </html>"""
     
@@ -293,11 +361,46 @@ class GraphicsGenerator:
         return " ".join(formatted)
     
     def _generate_quote_html(self, request: GraphicsGenerationRequest) -> str:
-        """Generate quote graphic HTML (testimonial style)."""
+        """Generate quote graphic HTML (testimonial style - openfigma quality)."""
         content = request.content
         quote = content.get("quote", "")
+        quote_emphasis = content.get("quote_emphasis", [])  # Parts to emphasize with <strong>
         author = content.get("author", "")
         role = content.get("role", "")
+        author_avatar = content.get("author_avatar", "")
+        badge_text = content.get("badge", "Case Study")
+        company_name = request.company_data.get("name", "") if request.company_data else ""
+        show_logos = content.get("show_logos", True)
+        
+        # Format quote with emphasis
+        formatted_quote = quote
+        for emphasis in quote_emphasis:
+            formatted_quote = formatted_quote.replace(emphasis, f"<strong>{emphasis}</strong>")
+        
+        logos_html = ""
+        if show_logos and company_name:
+            logos_html = f"""
+  <div class="logos-card">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 6h16M4 12h16M4 18h10"/>
+      </svg>
+      {company_name.upper()}
+    </div>
+    <div class="logo-divider"></div>
+    <div class="logo">
+      <div class="scaile-icon"></div>
+      SCAILE
+    </div>
+  </div>"""
+        
+        avatar_html = ""
+        if author_avatar:
+            avatar_html = f'<div class="author-avatar"><img src="{author_avatar}" alt="{author}"></div>'
+        else:
+            # Generate placeholder avatar
+            initials = "".join([n[0].upper() for n in author.split()[:2]]) if author else "?"
+            avatar_html = f'<div class="author-avatar"><div class="avatar-placeholder">{initials}</div></div>'
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -305,79 +408,209 @@ class GraphicsGenerator:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quote Graphic</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
       font-family: 'Inter', -apple-system, sans-serif;
-      background: #0a0a0b;
+      background: #f8f8f8;
       width: {request.dimensions[0]}px;
       height: {request.dimensions[1]}px;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 80px;
+      padding: 60px;
       position: relative;
     }}
+    body::before {{
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border: 1px solid #e8e8e8;
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      width: fit-content;
+      margin-bottom: 40px;
+    }}
+    .badge svg {{ width: 20px; height: 20px; }}
     .quote-card {{
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 24px;
-      backdrop-filter: blur(20px);
-      padding: 60px;
-      max-width: 900px;
+      background: white;
+      border-radius: 28px;
+      padding: 50px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }}
     .quote-text {{
       font-size: 32px;
-      font-weight: 600;
-      line-height: 1.4;
-      color: #f5f5f5;
-      margin-bottom: 40px;
-      position: relative;
+      line-height: 1.45;
+      color: #6b7280;
+      margin-bottom: 50px;
     }}
-    .quote-text::before {{
-      content: '"';
-      font-size: 80px;
-      color: rgba(99, 102, 241, 0.3);
-      position: absolute;
-      top: -20px;
-      left: -30px;
+    .quote-text strong {{
+      color: #1a1a1a;
+      font-weight: 700;
     }}
-    .author {{
+    .quote-author {{
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }}
+    .author-avatar {{
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #e5e5e5;
+      overflow: hidden;
+      flex-shrink: 0;
+    }}
+    .author-avatar img {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }}
+    .avatar-placeholder {{
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 700;
+      color: #6b7280;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+    }}
+    .author-info {{
       display: flex;
       flex-direction: column;
-      gap: 4px;
     }}
     .author-name {{
-      font-size: 18px;
-      font-weight: 600;
-      color: #f5f5f5;
+      font-size: 26px;
+      font-weight: 700;
+      color: #1a1a1a;
     }}
     .author-role {{
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.5);
+      font-size: 22px;
+      color: #6b7280;
+      margin-top: 4px;
+    }}
+    .logos-card {{
+      background: #f0f0f0;
+      border-radius: 28px;
+      padding: 40px 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+    }}
+    .logo {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a1a1a;
+      letter-spacing: -0.02em;
+    }}
+    .logo-icon {{ width: 32px; height: 32px; }}
+    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
+    .scaile-icon {{
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
     }}
   </style>
 </head>
 <body>
+  <div class="badge">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    {badge_text}
+  </div>
+
   <div class="quote-card">
-    <div class="quote-text">{quote}</div>
-    <div class="author">
-      <div class="author-name">{author}</div>
-      {f'<div class="author-role">{role}</div>' if role else ''}
+    <p class="quote-text">"{formatted_quote}"</p>
+    <div class="quote-author">
+      {avatar_html}
+      <div class="author-info">
+        <div class="author-name">{author}</div>
+        {f'<div class="author-role">{role}</div>' if role else ''}
+      </div>
     </div>
   </div>
+{logos_html}
 </body>
 </html>"""
     
     def _generate_metric_html(self, request: GraphicsGenerationRequest) -> str:
-        """Generate metric graphic HTML (statistics style)."""
+        """Generate metric graphic HTML (statistics style - openfigma quality)."""
         content = request.content
+        headline = content.get("headline", "")  # Optional headline above metric
         value = content.get("value", "")
         label = content.get("label", "")
+        quote = content.get("quote", "")  # Optional quote below metric
+        quote_emphasis = content.get("quote_emphasis", [])
         change = content.get("change", "")
-        change_type = content.get("change_type", "positive")  # positive, negative
+        change_type = content.get("change_type", "positive")
+        badge_text = content.get("badge", "Case Study")
+        company_name = request.company_data.get("name", "") if request.company_data else ""
+        show_logos = content.get("show_logos", True)
+        
+        # Format quote with emphasis
+        formatted_quote = quote
+        if quote_emphasis:
+            for emphasis in quote_emphasis:
+                formatted_quote = formatted_quote.replace(emphasis, f"<strong>{emphasis}</strong>")
+        
+        logos_html = ""
+        if show_logos and company_name:
+            logos_html = f"""
+  <div class="logos-card">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 6h16M4 12h16M4 18h10"/>
+      </svg>
+      {company_name.upper()}
+    </div>
+    <div class="logo-divider"></div>
+    <div class="logo">
+      <div class="scaile-icon"></div>
+      SCAILE
+    </div>
+  </div>"""
+        
+        headline_html = ""
+        if headline:
+            bold_parts = content.get("bold_parts", [])
+            muted_parts = content.get("muted_parts", [])
+            headline_html = f'<h1 class="headline">{self._format_headline(headline, bold_parts, muted_parts)}</h1>'
+        
+        quote_html = ""
+        if quote:
+            quote_html = f'<p class="quote-text">"{formatted_quote}"</p>'
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -390,60 +623,170 @@ class GraphicsGenerator:
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
       font-family: 'Inter', -apple-system, sans-serif;
-      background: #0a0a0b;
+      background: #f8f8f8;
       width: {request.dimensions[0]}px;
       height: {request.dimensions[1]}px;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 80px;
+      flex-direction: column;
+      padding: 60px;
+      position: relative;
     }}
-    .metric-card {{
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+    body::before {{
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border: 1px solid #e8e8e8;
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      width: fit-content;
+      margin-bottom: 60px;
+    }}
+    .badge svg {{ width: 20px; height: 20px; }}
+    .headline {{
+      font-size: 56px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 50px;
+    }}
+    .headline .muted {{ color: #b0b0b0; }}
+    .headline .bold {{ color: #1a1a1a; }}
+    .quote-card {{
+      background: white;
       border-radius: 28px;
-      backdrop-filter: blur(20px);
-      padding: 80px;
-      text-align: center;
-      min-width: 600px;
+      padding: 50px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }}
     .metric-value {{
-      font-size: 96px;
+      font-size: 120px;
       font-weight: 800;
       background: linear-gradient(135deg, #6366f1, #8b5cf6);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
       margin-bottom: 20px;
+      text-align: center;
     }}
     .metric-label {{
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 600;
-      color: #f5f5f5;
+      color: #1a1a1a;
       margin-bottom: 16px;
+      text-align: center;
     }}
     .metric-change {{
-      font-size: 18px;
+      font-size: 20px;
       font-weight: 500;
       color: {'#22c55e' if change_type == 'positive' else '#ef4444'};
+      text-align: center;
+    }}
+    .quote-text {{
+      font-size: 30px;
+      line-height: 1.5;
+      color: #6b7280;
+      margin-top: 40px;
+    }}
+    .quote-text strong {{
+      color: #1a1a1a;
+      font-weight: 700;
+    }}
+    .logos-card {{
+      background: #f0f0f0;
+      border-radius: 28px;
+      padding: 40px 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+    }}
+    .logo {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a1a1a;
+      letter-spacing: -0.02em;
+    }}
+    .logo-icon {{ width: 32px; height: 32px; }}
+    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
+    .scaile-icon {{
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
     }}
   </style>
 </head>
 <body>
-  <div class="metric-card">
+  <div class="badge">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    {badge_text}
+  </div>
+
+  {headline_html}
+
+  <div class="quote-card">
     <div class="metric-value">{value}</div>
     <div class="metric-label">{label}</div>
     {f'<div class="metric-change">{change}</div>' if change else ''}
+    {quote_html}
   </div>
+{logos_html}
 </body>
 </html>"""
     
     def _generate_cta_html(self, request: GraphicsGenerationRequest) -> str:
-        """Generate CTA graphic HTML."""
+        """Generate CTA graphic HTML (openfigma quality)."""
         content = request.content
         headline = content.get("headline", "")
         description = content.get("description", "")
         button_text = content.get("button_text", "Get Started")
+        badge_text = content.get("badge", "Get Started")
+        company_name = request.company_data.get("name", "") if request.company_data else ""
+        show_logos = content.get("show_logos", True)
+        
+        logos_html = ""
+        if show_logos and company_name:
+            logos_html = f"""
+  <div class="logos-card">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 6h16M4 12h16M4 18h10"/>
+      </svg>
+      {company_name.upper()}
+    </div>
+    <div class="logo-divider"></div>
+    <div class="logo">
+      <div class="scaile-icon"></div>
+      SCAILE
+    </div>
+  </div>"""
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -451,74 +794,163 @@ class GraphicsGenerator:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CTA Graphic</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
       font-family: 'Inter', -apple-system, sans-serif;
-      background: #0a0a0b;
+      background: #f8f8f8;
       width: {request.dimensions[0]}px;
       height: {request.dimensions[1]}px;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 80px;
+      flex-direction: column;
+      padding: 60px;
+      position: relative;
     }}
+    body::before {{
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border: 1px solid #e8e8e8;
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      width: fit-content;
+      margin-bottom: 40px;
+    }}
+    .badge svg {{ width: 20px; height: 20px; }}
     .cta-card {{
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: white;
       border-radius: 28px;
-      backdrop-filter: blur(20px);
-      padding: 80px;
+      padding: 60px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
       text-align: center;
-      max-width: 800px;
     }}
     .cta-headline {{
-      font-size: 42px;
-      font-weight: 700;
-      color: #f5f5f5;
-      margin-bottom: 24px;
-      line-height: 1.2;
+      font-size: 56px;
+      font-weight: 800;
+      color: #1a1a1a;
+      margin-bottom: 30px;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
     }}
     .cta-description {{
-      font-size: 20px;
-      color: rgba(255, 255, 255, 0.6);
-      margin-bottom: 40px;
+      font-size: 28px;
+      color: #6b7280;
+      margin-bottom: 50px;
       line-height: 1.5;
+      max-width: 700px;
     }}
     .cta-button {{
       display: inline-block;
       background: linear-gradient(135deg, #6366f1, #8b5cf6);
       color: white;
-      font-size: 18px;
-      font-weight: 600;
-      padding: 18px 40px;
-      border-radius: 12px;
+      padding: 24px 56px;
+      border-radius: 16px;
+      font-size: 24px;
+      font-weight: 700;
       text-decoration: none;
-      box-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      transition: transform 0.2s;
+    }}
+    .cta-button:hover {{
+      transform: translateY(-2px);
+    }}
+    .logos-card {{
+      background: #f0f0f0;
+      border-radius: 28px;
+      padding: 40px 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+    }}
+    .logo {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a1a1a;
+      letter-spacing: -0.02em;
+    }}
+    .logo-icon {{ width: 32px; height: 32px; }}
+    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
+    .scaile-icon {{
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
     }}
   </style>
 </head>
 <body>
-  <div class="cta-card">
-    <h2 class="cta-headline">{headline}</h2>
-    {f'<p class="cta-description">{description}</p>' if description else ''}
-    <a href="#" class="cta-button">{button_text}</a>
+  <div class="badge">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    {badge_text}
   </div>
+
+  <div class="cta-card">
+    <h1 class="cta-headline">{headline}</h1>
+    <p class="cta-description">{description}</p>
+    <a class="cta-button">{button_text}</a>
+  </div>
+{logos_html}
 </body>
 </html>"""
     
     def _generate_infographic_html(self, request: GraphicsGenerationRequest) -> str:
-        """Generate infographic HTML (diagram style)."""
-        # Simplified version - can be expanded based on openfigma patterns
+        """Generate infographic HTML (openfigma quality)."""
         content = request.content
         title = content.get("title", "")
         items = content.get("items", [])
+        badge_text = content.get("badge", "Process")
+        company_name = request.company_data.get("name", "") if request.company_data else ""
+        show_logos = content.get("show_logos", True)
         
-        items_html = "\n".join([
-            f'<div class="infographic-item">{item}</div>'
-            for item in items
-        ])
+        logos_html = ""
+        if show_logos and company_name:
+            logos_html = f"""
+  <div class="logos-card">
+    <div class="logo">
+      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M4 6h16M4 12h16M4 18h10"/>
+      </svg>
+      {company_name.upper()}
+    </div>
+    <div class="logo-divider"></div>
+    <div class="logo">
+      <div class="scaile-icon"></div>
+      SCAILE
+    </div>
+  </div>"""
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -526,56 +958,149 @@ class GraphicsGenerator:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Infographic</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     body {{
       font-family: 'Inter', -apple-system, sans-serif;
-      background: #0a0a0b;
+      background: #f8f8f8;
       width: {request.dimensions[0]}px;
       height: {request.dimensions[1]}px;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 80px;
-    }}
-    .infographic-card {{
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 28px;
-      backdrop-filter: blur(20px);
       padding: 60px;
-      max-width: 900px;
+      position: relative;
+    }}
+    body::before {{
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: white;
+      border: 1px solid #e8e8e8;
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      width: fit-content;
+      margin-bottom: 40px;
+    }}
+    .badge svg {{ width: 20px; height: 20px; }}
+    .infographic-card {{
+      background: white;
+      border-radius: 28px;
+      padding: 50px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
     }}
     .infographic-title {{
-      font-size: 36px;
-      font-weight: 700;
-      color: #f5f5f5;
-      margin-bottom: 40px;
+      font-size: 48px;
+      font-weight: 800;
+      color: #1a1a1a;
+      margin-bottom: 50px;
       text-align: center;
+      letter-spacing: -0.02em;
     }}
     .infographic-items {{
       display: flex;
       flex-direction: column;
       gap: 20px;
+      flex: 1;
+      justify-content: center;
     }}
     .infographic-item {{
-      font-size: 18px;
-      color: rgba(255, 255, 255, 0.8);
-      padding: 20px;
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 28px;
+      background: #f8f8f8;
+      border-radius: 20px;
+      border: 1px solid #e8e8e8;
+      transition: transform 0.2s;
+    }}
+    .infographic-item:hover {{
+      transform: translateX(4px);
+    }}
+    .item-number {{
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }}
+    .item-text {{
+      font-size: 26px;
+      font-weight: 600;
+      color: #1a1a1a;
+      line-height: 1.4;
+    }}
+    .logos-card {{
+      background: #f0f0f0;
+      border-radius: 28px;
+      padding: 40px 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 30px;
+    }}
+    .logo {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 28px;
+      font-weight: 800;
+      color: #1a1a1a;
+      letter-spacing: -0.02em;
+    }}
+    .logo-icon {{ width: 32px; height: 32px; }}
+    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
+    .scaile-icon {{
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
     }}
   </style>
 </head>
 <body>
+  <div class="badge">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    {badge_text}
+  </div>
+
   <div class="infographic-card">
-    <h2 class="infographic-title">{title}</h2>
+    <h1 class="infographic-title">{title}</h1>
     <div class="infographic-items">
-      {items_html}
+      {''.join([f'<div class="infographic-item"><div class="item-number">{i+1}</div><div class="item-text">{item}</div></div>' for i, item in enumerate(items)])}
     </div>
   </div>
+{logos_html}
 </body>
 </html>"""
     
