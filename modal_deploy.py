@@ -14,6 +14,23 @@ local_dir = Path(__file__).parent
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .apt_install(
+        "libglib2.0-0",
+        "libnspr4",
+        "libnss3",
+        "libdbus-1-3",
+        "libatk1.0-0",
+        "libatk-bridge2.0-0",
+        "libatspi2.0-0",
+        "libxcomposite1",
+        "libxdamage1",
+        "libxext6",
+        "libxfixes3",
+        "libxrandr2",
+        "libgbm1",
+        "libxkbcommon0",
+        "libasound2",
+    )
     .pip_install_from_requirements(local_dir / "requirements.txt")
     .run_commands("playwright install chromium")  # Install Chromium for HTML to PNG conversion
     .add_local_python_source("main")
