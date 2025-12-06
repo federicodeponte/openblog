@@ -175,30 +175,54 @@ class InternalLinksStage(Stage):
         # Get batch siblings for cross-linking within same batch
         batch_siblings = context.job_config.get("batch_siblings", []) if context.job_config else []
         
-        # Merge batch sibling URLs into sitemap_urls pool
+        # PRIORITIZE batch siblings - add them FIRST to the link pool
+        batch_sibling_urls = []
         if batch_siblings:
-            logger.info(f"Adding {len(batch_siblings)} batch siblings to link pool")
+            logger.info(f"Prioritizing {len(batch_siblings)} batch siblings for cross-linking")
             for sibling in batch_siblings:
                 sibling_url = sibling.get("slug", "")
-                if sibling_url and sibling_url not in sitemap_urls:
-                    sitemap_urls.append(sibling_url)
+                sibling_title = sibling.get("title", "")
+                sibling_keyword = sibling.get("keyword", "")
+                if sibling_url:
+                    batch_sibling_urls.append({
+                        'url': sibling_url,
+                        'title': sibling_title or sibling_url.split("/")[-1].replace("-", " ").title(),
+                        'keyword': sibling_keyword,
+                        'is_batch_sibling': True,
+                    })
+        
+        # Merge batch sibling URLs into sitemap_urls pool (prioritized first)
+        if batch_sibling_urls:
+            for batch_item in batch_sibling_urls:
+                if batch_item['url'] not in sitemap_urls:
+                    sitemap_urls.insert(0, batch_item['url'])  # Insert at beginning for priority
         
         if sitemap_urls:
-            # USE PROVIDED SITEMAP URLs
-            logger.info(f"Using {len(sitemap_urls)} provided sitemap URLs")
+            # USE PROVIDED SITEMAP URLs (batch siblings prioritized)
+            logger.info(f"Using {len(sitemap_urls)} provided sitemap URLs ({len(batch_sibling_urls)} batch siblings)")
             for i, url in enumerate(sitemap_urls[:10]):
-                # Generate a title from the URL
-                title = url.split("/")[-1].replace("-", " ").title()
-                if not title:
-                    title = "Related Content"
-                relevance = max(10 - i, 5)
+                # Check if this is a batch sibling
+                is_batch = any(item['url'] == url for item in batch_sibling_urls)
+                batch_item = next((item for item in batch_sibling_urls if item['url'] == url), None)
+                
+                # Generate a title from the URL or use batch sibling title
+                if batch_item:
+                    title = batch_item['title']
+                else:
+                    title = url.split("/")[-1].replace("-", " ").title()
+                    if not title:
+                        title = "Related Content"
+                
+                # Higher relevance for batch siblings
+                relevance = max(10 - i, 5) if not is_batch else max(10 - i + 2, 7)
+                
                 link_list.add_link(
                     url=url,
-                    title=f"Read more: {title}",
+                    title=title if not is_batch else f"{title} (Related Article)",
                     relevance=relevance,
                     domain=url.split("/")[1] if "/" in url else "/blog/",
                 )
-            logger.info(f"Added {link_list.count()} links from sitemap_urls")
+            logger.info(f"Added {link_list.count()} links from sitemap_urls ({len(batch_sibling_urls)} batch siblings prioritized)")
             return link_list
         
         # FALLBACK: Generate placeholder links from topics

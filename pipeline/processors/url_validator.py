@@ -115,6 +115,20 @@ class CitationURLValidator:
         # Step 1: Check if URL is valid (HTTP HEAD)
         logger.debug(f"Step 1: Checking original URL status...")
         is_valid, final_url = await self._check_url_status(url)
+        
+        # Step 1a: Validate URL is a specific page, not just domain homepage
+        is_specific_page = self._is_specific_page_url(final_url)
+        if not is_specific_page:
+            logger.warning(f"  ⚠️  URL appears to be domain homepage, not specific page: {final_url}")
+            logger.info(f"  Searching for specific page URL...")
+            # Try to find a specific page URL using the title
+            specific_url = await self._find_specific_page_url(title, final_url, company_url, competitors, language)
+            if specific_url:
+                final_url = specific_url
+                logger.info(f"  ✅ Found specific page URL: {final_url}")
+            else:
+                logger.warning(f"  ⚠️  Could not find specific page, using domain URL")
+        
         logger.info(f"  Original URL status: {'✅ VALID (200)' if is_valid else '❌ INVALID (non-200)'}")
         
         if is_valid:
@@ -427,6 +441,200 @@ If no authority source found: {{"url": "", "verified": false}}"""
             logger.error(f"Error searching for alternative URL: {e}")
             return None
 
+    def _is_specific_page_url(self, url: str) -> bool:
+        """
+        Check if URL is a specific page, not just a domain homepage.
+        
+        Args:
+            url: URL to check
+        
+        Returns:
+            True if URL appears to be a specific page
+        """
+        if not url or not isinstance(url, str):
+            return False
+        
+        # Remove protocol
+        url_clean = url.replace('https://', '').replace('http://', '').strip('/')
+        
+        # Check if it's just a domain (no path)
+        if '/' not in url_clean:
+            return False
+        
+        # Check if path is meaningful (not just / or /index.html)
+        parts = url_clean.split('/')
+        if len(parts) <= 1:
+            return False
+        
+        path = '/'.join(parts[1:])  # Everything after domain
+        if not path or path.lower() in ['', 'index.html', 'index', 'home', 'homepage', 'default']:
+            return False
+        
+        return True
+    
+    async def _find_specific_page_url(
+        self,
+        title: str,
+        domain_url: str,
+        company_url: str,
+        competitors: List[str],
+        language: str,
+    ) -> Optional[str]:
+        """
+        Find a specific page URL from a domain using Google Search.
+        
+        Args:
+            title: Citation title (used as search query)
+            domain_url: Domain URL to find pages on
+            company_url: Company URL (for filtering)
+            competitors: Competitor domains to exclude
+            language: Language code
+        
+        Returns:
+            Specific page URL or None
+        """
+        try:
+            # Extract domain
+            from urllib.parse import urlparse
+            parsed = urlparse(domain_url)
+            domain = parsed.netloc or domain_url.replace('https://', '').replace('http://', '').split('/')[0]
+            
+            # Build search query: title + site:domain
+            search_query = f"{title} site:{domain}"
+            
+            logger.debug(f"Searching for specific page: {search_query}")
+            
+            # Use Gemini with Google Search to find specific page
+            if not self.gemini_client:
+                return None
+            
+            prompt = f"""Use GoogleSearch to find a specific page URL on {domain} about: {title}
+
+Return ONLY a JSON object with:
+{{"url": "https://{domain}/specific-page-path", "verified": true}}
+
+Requirements:
+- Must be a specific page URL (not homepage)
+- Must be on {domain}
+- Must be relevant to: {title}
+- Must be an authoritative source
+
+If no specific page found: {{"url": "", "verified": false}}"""
+
+            response_text = await self.gemini_client.generate_content(prompt, enable_tools=True)
+            
+            # Parse response
+            import json
+            json_match = re.search(r'\{[^}]+\}', response_text)
+            if json_match:
+                result = json.loads(json_match.group(0))
+                if result.get('verified') and result.get('url'):
+                    found_url = result['url']
+                    # Validate it's a specific page
+                    if self._is_specific_page_url(found_url):
+                        return found_url
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error finding specific page URL: {e}")
+            return None
+    
+    def _is_specific_page_url(self, url: str) -> bool:
+        """
+        Check if URL is a specific page, not just a domain homepage.
+        
+        Args:
+            url: URL to check
+        
+        Returns:
+            True if URL appears to be a specific page
+        """
+        if not url or not isinstance(url, str):
+            return False
+        
+        # Remove protocol
+        url_clean = url.replace('https://', '').replace('http://', '').strip('/')
+        
+        # Check if it's just a domain (no path)
+        if '/' not in url_clean:
+            return False
+        
+        # Check if path is meaningful (not just / or /index.html)
+        parts = url_clean.split('/')
+        if len(parts) <= 1:
+            return False
+        
+        path = '/'.join(parts[1:])  # Everything after domain
+        if not path or path.lower() in ['', 'index.html', 'index', 'home', 'homepage', 'default']:
+            return False
+        
+        return True
+    
+    async def _find_specific_page_url(
+        self,
+        title: str,
+        domain_url: str,
+        company_url: str,
+        competitors: List[str],
+        language: str,
+    ) -> Optional[str]:
+        """
+        Find a specific page URL from a domain using Google Search.
+        
+        Args:
+            title: Citation title (used as search query)
+            domain_url: Domain URL to find pages on
+            company_url: Company URL (for filtering)
+            competitors: Competitor domains to exclude
+            language: Language code
+        
+        Returns:
+            Specific page URL or None
+        """
+        try:
+            # Extract domain
+            parsed = urlparse(domain_url)
+            domain = parsed.netloc or domain_url.replace('https://', '').replace('http://', '').split('/')[0]
+            
+            # Build search query: title + site:domain
+            search_query = f"{title} site:{domain}"
+            
+            logger.debug(f"Searching for specific page: {search_query}")
+            
+            # Use Gemini with Google Search to find specific page
+            if not self.gemini_client:
+                return None
+            
+            prompt = f"""Use GoogleSearch to find a specific page URL on {domain} about: {title}
+
+Return ONLY a JSON object with:
+{{"url": "https://{domain}/specific-page-path", "verified": true}}
+
+Requirements:
+- Must be a specific page URL (not homepage)
+- Must be on {domain}
+- Must be relevant to: {title}
+- Must be an authoritative source
+
+If no specific page found: {{"url": "", "verified": false}}"""
+
+            response_text = await self.gemini_client.generate_content(prompt, enable_tools=True)
+            
+            # Parse response
+            json_match = re.search(r'\{[^}]+\}', response_text)
+            if json_match:
+                result = json.loads(json_match.group(0))
+                if result.get('verified') and result.get('url'):
+                    found_url = result['url']
+                    # Validate it's a specific page
+                    if self._is_specific_page_url(found_url):
+                        return found_url
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error finding specific page URL: {e}")
+            return None
+    
     def _build_search_query(self, title: str) -> str:
         """
         Build search query from citation title.

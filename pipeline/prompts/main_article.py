@@ -139,6 +139,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 8. **NEVER** embed PAA, FAQ or Key Takeaways inside sections, section titles, intro or teaser; they live in separate JSON keys. FAQ/PAA quality affects AEO score - make them specific and valuable.
 
 9. **Internal links**: at least one per H2 section, woven seamlessly into the surrounding sentence. Example: `<a href="/target-slug">Descriptive Anchor</a>` (≤ 6 words, varied). ENSURE correct HTML format.
+   • **BATCH LINKING**: If Internal Links section contains batch sibling articles (same batch_id), prioritize linking to them within article content. Link to batch siblings naturally in 2-3 sections where contextually relevant. This creates article clusters and improves SEO.
 
 10. Citations in-text as [1], [2]… matching the **Sources** list. MAX 20 sources. **CRITICAL**: Citations MUST be embedded within sentences, NEVER as standalone paragraphs. Example: "Industry data shows 65% growth [1][2]." NOT "[1][2]" as a separate paragraph.
 
@@ -159,7 +160,9 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 • Minimum {standards["citation_count"]} authoritative sources.
 • Only use official government, industry association, and expert organization sources.
 • Format: `[1]: https://… – 8-15 word description` (canonical URLs only).
-• AVOID: blogs, generic websites, promotional content.
+• **CRITICAL**: Use SPECIFIC PAGE URLs, NOT domain homepages. Example: `https://example.com/research/2025-study` NOT `https://example.com`
+• **CRITICAL**: Link sources IN-TEXT using anchor tags. Format: `<a href="https://source-url.com/page" target="_blank">relevant text</a> [1]` - embed links naturally within sentences.
+• AVOID: blogs, generic websites, promotional content, domain homepages.
 • VERIFY: All sources must be current (within 2 years) and directly relevant.
 
 *** HARD RULES ***

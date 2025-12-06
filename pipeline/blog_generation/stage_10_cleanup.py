@@ -28,6 +28,7 @@ from typing import Dict, Any, Tuple, Optional, List
 from ..core import ExecutionContext, Stage
 from ..processors.cleanup import HTMLCleaner, SectionCombiner, DataMerger
 from ..processors.citation_sanitizer import CitationSanitizer2
+from ..processors.citation_linker import CitationLinker
 from ..utils.humanizer import humanize_content, detect_ai_patterns, get_ai_score
 from ..utils.language_validator import validate_article_language
 from ..processors.quality_checker import QualityChecker
@@ -129,6 +130,27 @@ class CleanupStage(Stage):
         # Step 4b: Final citation cleanup (can run in parallel with quality checks prep)
         logger.debug("Step 32b: Citation sanitization (CitationSanitizer2)...")
         sanitized_citations = CitationSanitizer2.sanitize(merged_article)
+
+        # Step 4c: Link citations in content (convert [1], [2] to clickable links)
+        logger.debug("Step 32c: Linking citations in content...")
+        citations_list = context.parallel_results.get("citations_list")
+        if citations_list and sanitized_citations:
+            # Extract citations for linking
+            citations_for_linking = []
+            if hasattr(citations_list, 'citations'):
+                for citation in citations_list.citations:
+                    citations_for_linking.append({
+                        'number': citation.number if hasattr(citation, 'number') else citation.get('number'),
+                        'url': citation.url if hasattr(citation, 'url') else citation.get('url'),
+                        'title': citation.title if hasattr(citation, 'title') else citation.get('title', ''),
+                    })
+            
+            if citations_for_linking:
+                sanitized_citations = CitationLinker.link_citations_in_content(
+                    sanitized_citations,
+                    citations_for_linking
+                )
+                logger.info(f"✅ Linked {len(citations_for_linking)} citations in content")
 
         # Step 5: Quality checks and flattening
         logger.debug("Step 33: Quality checks and validation...")

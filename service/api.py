@@ -31,6 +31,12 @@ from pipeline.utils.similarity_checker import (
     check_for_duplicates,
     store_article_fingerprint,
 )
+# Content refresher for updating existing content
+from service.content_refresher import ContentParser, ContentRefresher
+from pipeline.models.gemini_client import GeminiClient
+# Content refresher for updating existing content
+from service.content_refresher import ContentParser, ContentRefresher
+from pipeline.models.gemini_client import GeminiClient
 # Stage imports delayed to avoid circular imports
 # Will be imported dynamically in create_stages()
 
@@ -1729,6 +1735,108 @@ Content to translate:
             success=False,
             duration_seconds=duration,
             error=str(e),
+        )
+
+
+class ContentRefreshRequest(BaseModel):
+    """Request model for content refresh."""
+    content: str = Field(..., description="Existing content in any format (HTML, Markdown, JSON, plain text)")
+    content_format: Optional[str] = Field(None, description="Content format hint ('html', 'markdown', 'json', 'text'). Auto-detected if not provided")
+    instructions: List[str] = Field(..., description="List of instructions/prompts for what to change (e.g., 'Update statistics to 2025', 'Make tone more professional')")
+    target_sections: Optional[List[int]] = Field(None, description="Optional: List of section indices to update (0-based). If not provided, updates all sections")
+    output_format: str = Field("json", description="Output format: 'json', 'html', or 'markdown'")
+
+
+class ContentRefreshResponse(BaseModel):
+    """Response model for content refresh."""
+    success: bool
+    refreshed_content: Optional[Dict[str, Any]] = Field(None, description="Refreshed content in structured format")
+    refreshed_html: Optional[str] = Field(None, description="Refreshed content as HTML")
+    refreshed_markdown: Optional[str] = Field(None, description="Refreshed content as Markdown")
+    sections_updated: int = Field(0, description="Number of sections updated")
+    error: Optional[str] = Field(None, description="Error message if failed")
+
+
+@app.post("/refresh", response_model=ContentRefreshResponse)
+async def refresh_content(request: ContentRefreshRequest):
+    """
+    Refresh/correct existing content using prompts.
+    
+    Similar to ChatGPT Canvas - updates specific parts without full rewrite.
+    
+    Supports flexible input formats:
+    - HTML: Parses headings and paragraphs
+    - Markdown: Converts to structured format
+    - JSON: Structured blog format (with sections)
+    - Plain text: Auto-detects sections by paragraphs
+    
+    Example:
+    ```json
+    {
+      "content": "<h1>Title</h1><h2>Section 1</h2><p>Old content...</p>",
+      "content_format": "html",
+      "instructions": [
+        "Update statistics to 2025",
+        "Make tone more professional",
+        "Add recent examples"
+      ],
+      "target_sections": [0, 1],
+      "output_format": "html"
+    }
+    ```
+    
+    This will:
+    1. Parse the HTML content into sections
+    2. Update only sections 0 and 1 based on instructions
+    3. Keep other sections unchanged
+    4. Return refreshed content in HTML format
+    """
+    try:
+        # Parse content into structured format
+        parser = ContentParser()
+        parsed_content = parser.parse(request.content, request.content_format)
+        
+        # Initialize Gemini client for refresh
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GEMINI_API_KEY")
+        if not api_key:
+            raise HTTPException(
+                status_code=500,
+                detail="GOOGLE_API_KEY or GEMINI_API_KEY not configured"
+            )
+        
+        gemini_client = GeminiClient(api_key=api_key)
+        refresher = ContentRefresher(gemini_client)
+        
+        # Refresh content
+        refreshed_content = await refresher.refresh_content(
+            content=parsed_content,
+            instructions=request.instructions,
+            target_sections=request.target_sections,
+        )
+        
+        # Count updated sections
+        sections_updated = len(request.target_sections) if request.target_sections else len(refreshed_content.get('sections', []))
+        
+        # Format output based on requested format
+        response_data = {
+            "success": True,
+            "refreshed_content": refreshed_content,
+            "sections_updated": sections_updated,
+        }
+        
+        if request.output_format == "html":
+            response_data["refreshed_html"] = refresher.to_html(refreshed_content)
+        elif request.output_format == "markdown":
+            response_data["refreshed_markdown"] = refresher.to_markdown(refreshed_content)
+        
+        return ContentRefreshResponse(**response_data)
+        
+    except Exception as e:
+        logger.error(f"Content refresh error: {e}", exc_info=True)
+        return ContentRefreshResponse(
+            success=False,
+            error=str(e),
+            sections_updated=0,
         )
 
 
