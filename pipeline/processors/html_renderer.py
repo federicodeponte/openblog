@@ -42,8 +42,11 @@ class HTMLRenderer:
             return ""
         
         # Keep local image paths relative for viewing
+        # HTML is at output/SLUG/index.html, images at output/images/
+        # So: ../images/filename.webp
         if url.startswith('output/images/'):
-            return f"../{url}"  # Relative path from index.html location
+            filename = url.split('/')[-1]  # Extract just the filename
+            return f"../images/{filename}"
         
         # Already absolute
         if url.startswith(('http://', 'https://')):
