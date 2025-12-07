@@ -198,6 +198,19 @@ class QualityRefinementStage(Stage):
         ai_marker_issues = self._check_ai_markers(data)
         issues.extend(ai_marker_issues)
         
+        # ROOT_LEVEL_FIX_PLAN.md checks
+        # Issue 4: Academic citations [N]
+        citation_issues = self._check_academic_citations_stage2b(data)
+        issues.extend(citation_issues)
+        
+        # Issue 5: Em dashes
+        em_dash_issues = self._check_em_dashes_stage2b(data)
+        issues.extend(em_dash_issues)
+        
+        # Issue 6: Malformed headings
+        heading_issues = self._check_malformed_headings_stage2b(data)
+        issues.extend(heading_issues)
+        
         return issues
     
     def _check_keyword_density(
@@ -464,4 +477,92 @@ class QualityRefinementStage(Stage):
         
         # Return unique variations (max 5)
         return list(dict.fromkeys(variations))[:5]
+    
+    def _check_academic_citations_stage2b(self, data: ArticleOutput) -> List[QualityIssue]:
+        """
+        Check for forbidden academic citations [N].
+        ROOT_LEVEL_FIX_PLAN.md Issue 1.
+        """
+        issues = []
+        
+        # Check all content fields
+        all_text = data.Intro + " ".join([
+            getattr(data, f"section_{i:02d}_content", "")
+            for i in range(1, 10)
+            if getattr(data, f"section_{i:02d}_content", "")
+        ])
+        
+        if re.search(r'\[\d+\]', all_text):
+            count = len(re.findall(r'\[\d+\]', all_text))
+            issues.append(QualityIssue(
+                issue_type="academic_citations",
+                severity="critical",
+                description=f"Academic citations [N] found ({count} instances)",
+                current_value=count,
+                target_value=0,
+                field="all_content"
+            ))
+        
+        return issues
+    
+    def _check_em_dashes_stage2b(self, data: ArticleOutput) -> List[QualityIssue]:
+        """
+        Check for forbidden em dashes.
+        ROOT_LEVEL_FIX_PLAN.md Issue 2.
+        """
+        issues = []
+        
+        # Check all content fields
+        all_text = data.Intro + " ".join([
+            getattr(data, f"section_{i:02d}_content", "")
+            for i in range(1, 10)
+            if getattr(data, f"section_{i:02d}_content", "")
+        ])
+        
+        em_dash_patterns = [r'—', r'&mdash;', r'&#8212;', r'&#x2014;']
+        total_count = 0
+        
+        for pattern in em_dash_patterns:
+            matches = re.findall(pattern, all_text)
+            total_count += len(matches)
+        
+        if total_count > 0:
+            issues.append(QualityIssue(
+                issue_type="em_dashes",
+                severity="critical",
+                description=f"Em dashes found ({total_count} instances)",
+                current_value=total_count,
+                target_value=0,
+                field="all_content"
+            ))
+        
+        return issues
+    
+    def _check_malformed_headings_stage2b(self, data: ArticleOutput) -> List[QualityIssue]:
+        """
+        Check for malformed headings (double question prefixes).
+        ROOT_LEVEL_FIX_PLAN.md Issue A.
+        """
+        issues = []
+        
+        # Check section titles
+        for i in range(1, 10):
+            title_field = f"section_{i:02d}_title"
+            title = getattr(data, title_field, "")
+            
+            if not title:
+                continue
+            
+            # Check for "What is How/Why/What" patterns
+            if re.search(r'^What is (How|Why|What|When|Where|Who)\b', title, re.IGNORECASE):
+                issues.append(QualityIssue(
+                    issue_type="malformed_heading",
+                    severity="critical",
+                    description=f"Malformed heading: '{title}' (duplicate question prefix)",
+                    current_value=title,
+                    target_value=re.sub(r'^What is ', '', title, flags=re.IGNORECASE),
+                    field=title_field
+                ))
+        
+        return issues
 

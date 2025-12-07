@@ -21,6 +21,7 @@ Validation:
 from typing import Optional, Dict, List, Any
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +230,163 @@ class ArticleOutput(BaseModel):
             # Truncate to 160 chars with ellipsis
             truncated = v[:157] + "..."
             return truncated[:160]
+        return v
+    
+    # ========== ROOT-LEVEL FIX VALIDATORS (from ROOT_LEVEL_FIX_PLAN.md) ==========
+    
+    @field_validator(
+        'section_01_title', 'section_02_title', 'section_03_title',
+        'section_04_title', 'section_05_title', 'section_06_title',
+        'section_07_title', 'section_08_title', 'section_09_title',
+        'paa_01_question', 'paa_02_question', 'paa_03_question', 'paa_04_question',
+        'faq_01_question', 'faq_02_question', 'faq_03_question',
+        'faq_04_question', 'faq_05_question', 'faq_06_question',
+        mode='before'
+    )
+    @classmethod
+    def clean_heading(cls, v: str) -> str:
+        """
+        Fix Issue A: Malformed headings like "What is How Do X??"
+        
+        Cleans:
+        - Duplicate question prefixes (What is + How/Why/What)
+        - Double punctuation (??, !!, ..)
+        - HTML tags in plain text fields
+        """
+        if not v or not isinstance(v, str):
+            return v
+        
+        v = v.strip()
+        
+        # Strip HTML tags from headings (should be plain text)
+        v = re.sub(r'<[^>]+>', '', v)
+        
+        # Fix: Remove "What is" prefix if followed by another question word
+        if v.startswith("What is "):
+            rest = v[8:]  # Remove "What is "
+            if rest.lower().startswith(("how ", "why ", "what ", "when ", "where ", "who ")):
+                v = rest
+                logger.info(f"🔧 Fixed malformed heading: removed duplicate 'What is' prefix")
+        
+        # Fix: Remove double punctuation
+        original = v
+        v = re.sub(r'\?{2,}', '?', v)  # ?? → ?
+        v = re.sub(r'!{2,}', '!', v)  # !! → !
+        v = re.sub(r'\.{2,}', '.', v)  # .. → .
+        if v != original:
+            logger.info(f"🔧 Fixed double punctuation in heading")
+        
+        return v.strip()
+    
+    @field_validator('Headline', 'Teaser', 'Direct_Answer', 'Intro', mode='before')
+    @classmethod
+    def strip_html_from_plain_text(cls, v: str) -> str:
+        """Strip HTML from fields that should be plain text."""
+        if not v or not isinstance(v, str):
+            return v
+        
+        # Check if field contains HTML tags
+        if '<' in v and '>' in v:
+            cleaned = re.sub(r'<[^>]+>', '', v)
+            if cleaned != v:
+                logger.info(f"🔧 Stripped HTML tags from plain text field")
+            return cleaned.strip()
+        
+        return v.strip()
+    
+    @field_validator(
+        'Headline', 'Subtitle', 'Teaser', 'Direct_Answer', 'Intro',
+        'section_01_content', 'section_02_content', 'section_03_content',
+        'section_04_content', 'section_05_content', 'section_06_content',
+        'section_07_content', 'section_08_content', 'section_09_content',
+        'paa_01_answer', 'paa_02_answer', 'paa_03_answer', 'paa_04_answer',
+        'faq_01_answer', 'faq_02_answer', 'faq_03_answer',
+        'faq_04_answer', 'faq_05_answer', 'faq_06_answer',
+        mode='before'
+    )
+    @classmethod
+    def validate_no_academic_citations(cls, v: str) -> str:
+        """
+        Fix Issue 1: Reject academic citations [N]
+        
+        Blocks content with patterns like [1], [2], [1][2], [1,2]
+        Forces Gemini to use inline contextual links instead.
+        """
+        if not v or not isinstance(v, str):
+            return v
+        
+        # Check for academic citation patterns
+        if re.search(r'\[\d+\]', v):
+            logger.error(f"❌ Academic citations [N] found in content: {v[:100]}...")
+            raise ValueError(
+                f"Academic citations [N] are FORBIDDEN. Found in: {v[:100]}... "
+                "Use inline contextual links instead (e.g., 'according to GitHub study')."
+            )
+        
+        return v
+    
+    @field_validator(
+        'Headline', 'Subtitle', 'Teaser', 'Direct_Answer', 'Intro',
+        'section_01_content', 'section_02_content', 'section_03_content',
+        'section_04_content', 'section_05_content', 'section_06_content',
+        'section_07_content', 'section_08_content', 'section_09_content',
+        mode='before'
+    )
+    @classmethod
+    def validate_no_em_dashes(cls, v: str) -> str:
+        """
+        Fix Issue 2: Reject em dashes
+        
+        Blocks: —, &mdash;, &#8212;, &#x2014;
+        Forces use of commas, parentheses, or colons instead.
+        """
+        if not v or not isinstance(v, str):
+            return v
+        
+        # Check for em dash patterns (all variants)
+        if re.search(r'—|&mdash;|&#8212;|&#x2014;', v):
+            logger.error(f"❌ Em dashes found in content: {v[:100]}...")
+            raise ValueError(
+                f"Em dashes (—) are FORBIDDEN. Found in: {v[:100]}... "
+                "Use commas, parentheses, or colons instead."
+            )
+        
+        return v
+    
+    @field_validator(
+        'section_01_content', 'section_02_content', 'section_03_content',
+        'section_04_content', 'section_05_content', 'section_06_content',
+        'section_07_content', 'section_08_content', 'section_09_content',
+        mode='before'
+    )
+    @classmethod
+    def detect_incomplete_sentences(cls, v: str) -> str:
+        """
+        Fix Issue E: Detect cutoff sentences
+        
+        Warns about patterns indicating incomplete sentences:
+        - Ends with comma: "Ultimately,"
+        - Ends with conjunction: "and", "but", "however"
+        - Ends with colon without list following
+        """
+        if not v or not isinstance(v, str):
+            return v
+        
+        # Strip HTML to check plain text
+        text = re.sub(r'<[^>]+>', '', v).strip()
+        
+        # Check for incomplete sentence patterns
+        incomplete_patterns = [
+            (r'\w+,\s*$', "ends with comma"),
+            (r'\b(and|or|but|however|moreover|furthermore|therefore)\s*$', "ends with conjunction"),
+            (r':\s*$', "ends with colon without list"),
+        ]
+        
+        for pattern, desc in incomplete_patterns:
+            if re.search(pattern, text):
+                logger.warning(f"⚠️  Possible incomplete sentence ({desc}): ...{text[-50:]}")
+                # Don't block, just warn (might be intentional)
+        
         return v
 
     def get_active_sections(self) -> int:

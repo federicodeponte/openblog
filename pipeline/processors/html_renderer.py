@@ -281,7 +281,7 @@ class HTMLRenderer:
     <main class="container">
         {f'<img src="{HTMLRenderer._escape_attr(image_url)}" alt="{HTMLRenderer._escape_attr(image_alt)}" class="featured-image">' if image_url else ''}
 
-        {f'<div class="intro">{HTMLRenderer._linkify_citations(intro)}</div>' if intro else ''}
+        {f'<div class="intro">{intro}</div>' if intro else ''}
 
         {HTMLRenderer._render_toc(toc)}
 
@@ -385,11 +385,9 @@ class HTMLRenderer:
                 parts.append(f"<h2>{HTMLRenderer._escape_html(title_clean)}</h2>")
 
             if content and content.strip():
-                # First clean up useless patterns
+                # Clean up useless patterns (also removes all [N] citations)
                 content_clean = HTMLRenderer._cleanup_content(content)
-                # Then convert citation markers to clickable links
-                content_with_links = HTMLRenderer._linkify_citations(content_clean)
-                parts.append(content_with_links)
+                parts.append(content_clean)
             
             # Inject first comparison table after section 2
             if i == 2 and tables and len(tables) >= 1:
@@ -767,6 +765,26 @@ class HTMLRenderer:
         content = re.sub(r'<p>\s*(matters|so you can|if you want):\s*</p>', '', content, flags=re.IGNORECASE)
         
         logger.info("🚨 Fixed Gemini hallucination patterns (context loss)")
+        
+        # STEP 0.8: FIX KEYWORD LINE BREAKS (Issue D)
+        # Gemini sometimes creates paragraph breaks in the middle of keywords:
+        # "adoption of\n\nAI code review tools 2025\n\nhas..." → "adoption of AI code review tools 2025 has..."
+        # Pattern: Text + newlines + capitalized phrase + newlines + continuation
+        content = re.sub(r'(\w+)\s*\n{2,}\s*([A-Z][A-Za-z\s\d]+)\s*\n{2,}\s*([a-z])', r'\1 \2 \3', content)
+        logger.info("🔧 Fixed keyword line breaks")
+        
+        # STEP 0.9: FIX INCOMPLETE SENTENCES (Issue E)
+        # Detect and remove sentences that end mid-thought:
+        # "Ultimately," → remove entire paragraph
+        # "However," → remove if at end of paragraph
+        # Pattern: Paragraph ending with conjunction/comma and no continuation
+        content = re.sub(
+            r'<p>([^<]*?)(Ultimately|However|Moreover|Furthermore|Therefore|Additionally),?\s*</p>(?!\s*<p>)',
+            r'<p>\1</p>',
+            content,
+            flags=re.IGNORECASE
+        )
+        logger.info("🔧 Fixed incomplete trailing sentences")
         
         # STEP 1: Humanize language (remove AI markers)
         content = HTMLRenderer._humanize_content(content)

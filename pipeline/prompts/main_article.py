@@ -130,11 +130,40 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 
 🚨 **HARD RULES (ABSOLUTE - ZERO TOLERANCE):**
 
-**RULE 0A: NO EM DASHES (—) ANYWHERE**
+**RULE 0A: NO EM DASHES (—) OR DOUBLE PUNCTUATION**
 - ❌ FORBIDDEN: "The tools—like Copilot—are popular."
+- ❌ FORBIDDEN: "What are the benefits??" or "Really!!" or "However,,"
 - ✅ REQUIRED: "The tools, like Copilot, are popular." OR "The tools (like Copilot) are popular."
 - If you need a dash, use comma, parentheses, or split into two sentences
-- **VALIDATION: Search your output for "—" before submitting. Count MUST be ZERO.**
+- **VALIDATION: Search your output for "—", "??", "!!", ",," before submitting. Count MUST be ZERO.**
+
+**RULE 0A2: HEADING QUALITY (NO MALFORMED HEADINGS)**
+- ❌ FORBIDDEN: "What is How Do X Work?" (double question prefix)
+- ❌ FORBIDDEN: "Why What Are the Benefits?" (duplicate question words)
+- ✅ REQUIRED: "How Do X Work?" or "What Are the Benefits?"
+- **Each heading must have EXACTLY ONE question prefix (What/How/Why/When/Where/Who)**
+- **VALIDATION: Check every heading - no "What is + question word" patterns**
+
+**RULE 0A3: COMPLETE SENTENCES ONLY**
+- ❌ FORBIDDEN: End paragraphs with "Ultimately," or "However," or "Additionally,"
+- ❌ FORBIDDEN: Sentences ending mid-thought or with conjunction
+- ✅ REQUIRED: Every sentence must be complete with subject, verb, and conclusion
+- **VALIDATION: Check last sentence of every paragraph - must end with period after complete thought**
+
+**RULE 0A4: KEYWORD FORMATTING (NO LINE BREAKS)**
+- ❌ FORBIDDEN: Multi-line keyword emphasis that creates breaks:
+  ```
+  adoption of
+  
+  AI code review tools 2025
+  
+  has outpaced
+  ```
+- ✅ REQUIRED: Keywords inline in natural sentence flow:
+  ```
+  adoption of AI code review tools 2025 has outpaced security preparedness
+  ```
+- **Keywords/phrases must NEVER span multiple paragraphs or create artificial breaks**
 
 **RULE 0B: PRIMARY KEYWORD DENSITY**
 - The exact phrase "{primary_keyword}" MUST appear **EXACTLY 5-8 times** in total (headline + intro + all sections)
@@ -228,7 +257,8 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    - "5 Security Risks Every Team Must Address" (43 chars, action)
    - "Real-World ROI: Enterprise Case Studies" (41 chars, action)
 
-9. **Internal Links** (CRITICAL FORMAT): Include 3-5 links throughout article (minimum 1 every 2-3 sections). 
+9. **Internal Links** (CRITICAL FORMAT): Include {standards["internal_links_min"]} throughout article. 
+   **MANDATORY: Minimum 1 internal link every 2-3 sections.**
    **ALL internal links MUST use `/magazine/{{slug}}` format.**
    
    Format examples:
@@ -238,16 +268,18 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    ⛔ FORBIDDEN:
    - `<a href="/ai-security">...` (missing /magazine/)
    - `<a href="/blog/devops">...` (wrong prefix)
+   - Fewer than 3 internal links total (output will be REJECTED)
    
    ✅ REQUIRED:
    - All slugs must start with `/magazine/`
    - Anchor text: max 6 words
    - Distribute evenly—don't bunch at top
+   - **VALIDATION: Count internal links before submitting. Must be ≥ 3.**
    
    ✅ GOOD Examples (embedded naturally in sentences):
-   - "Organizations are <a href="/ai-governance">implementing governance frameworks</a> to manage risk."
-   - "Learn more about <a href="/security-best-practices">security scanning automation</a> in our guide."
-   - "The shift toward <a href="/agentic-ai">autonomous AI agents</a> is accelerating."
+   - "Organizations are <a href="/magazine/ai-governance">implementing governance frameworks</a> to manage risk."
+   - "Learn more about <a href="/magazine/security-best-practices">security scanning automation</a> in our guide."
+   - "The shift toward <a href="/magazine/agentic-ai">autonomous AI agents</a> is accelerating."
 
 10. **Case Studies** (MANDATORY - EXAMPLES REQUIRED):
     
@@ -283,42 +315,46 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
     
     REQUIREMENT: Minimum 2 case studies per article, each 30+ words.
     
-    Citations: Embed inline source links naturally within complete sentences - NO academic-style numbered citations [1][2].
+    Citations: Embed inline source references naturally within complete sentences - NO academic-style numbered citations [1][2]. NO hyperlinks in content.
     
-    **CITATION STYLE (CRITICAL - INLINE LINKS ONLY):**
+    **CITATION STYLE (CRITICAL - NATURAL LANGUAGE ONLY):**
     
     🚫 **ABSOLUTELY FORBIDDEN - NEVER USE THESE:**
     ```html
     <p>GitHub Copilot increases productivity by 55% [1][2].</p>
     <p>Amazon Q saved 4,500 developer years [3][4].</p>
     <p>Research shows 45% vulnerability rate [5].</p>
+    <p>Studies show <a href="#source-1">significant gains</a>.</p>  ← NO LINKS IN CONTENT
     ```
     ❌ ANY numbered brackets like [1], [2], [3], [1][2], [2][3] are BANNED
     ❌ If you write [N] anywhere, the output will be REJECTED
     ❌ Scientific/academic citation style is NOT ALLOWED
+    ❌ NO <a href="#source-N"> links in content - sources listed separately at end
     
-    ✅ **REQUIRED - Inline contextual links ONLY:**
+    ✅ **REQUIRED - Natural language attribution ONLY:**
     ```html
-    <p>GitHub Copilot increases productivity by 55% <a href="#source-1" class="citation">according to GitHub's enterprise study</a>.</p>
-    <p>Amazon Q saved 4,500 developer years <a href="#source-2" class="citation">in Amazon's Java modernization project</a>.</p>
-    <p>Research shows 45% vulnerability rate <a href="#source-5" class="citation">per Veracode's 2025 report</a>.</p>
+    <p>GitHub Copilot increases productivity by 55%, according to GitHub's 2024 enterprise study.</p>
+    <p>Amazon Q saved 4,500 developer years in Amazon's Java modernization project.</p>
+    <p>Research shows 45% vulnerability rate, per Veracode's 2025 security report.</p>
     ```
     
-    **MANDATORY INLINE LINK RULES:**
-    - Link text = 2-5 words describing the source (e.g., "according to NIST", "GitHub's 2024 study", "Amazon's case study")
-    - Use `class="citation"` for all source links
-    - EVERY fact must have an inline contextual link (NOT [N])
-    - href = `#source-N` where N matches source number in Sources section
-    - Place link at END of claim/data point (before period)
-    - Natural language, not academic markers
+    **MANDATORY ATTRIBUTION RULES:**
+    - Source attribution = natural language in the sentence (e.g., "according to GitHub", "per Veracode's 2025 report", "in Amazon's study")
+    - NO hyperlinks in content (<a> tags) - sources listed in Sources section at end
+    - EVERY fact must have natural language attribution (NOT [N], NOT links)
+    - Place attribution at END of claim/data point (before period)
+    - Natural, journalistic language - not academic markers
     
     **EXAMPLES:**
-    - "...productivity gains of 55% <a href="#source-1" class="citation">per GitHub research</a>."
-    - "...saving $260 million <a href="#source-2" class="citation">according to AWS</a>."
-    - "...45% vulnerability rate <a href="#source-3" class="citation">found by NIST</a>."
+    - "...productivity gains of 55%, per GitHub's 2024 enterprise research."
+    - "...saving $260 million, according to AWS's case study analysis."
+    - "...45% vulnerability rate, found by NIST's security assessment."
+    - "...doubling output, as reported in Stack Overflow's 2024 developer survey."
 
-11. **HTML Lists** (IMPORTANT for scannability):
+11. **HTML Lists** (IMPORTANT for scannability + CONSISTENCY):
     Include 5-8 lists throughout article. Minimum 1 list every 2 sections.
+    
+    **RULE: ALWAYS use proper HTML list tags (<ul> or <ol>). NEVER use paragraph text styled as lists.**
     
     Lists work well for:
     - Feature comparisons
@@ -326,6 +362,15 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
     - Common problems/solutions
     - Tool selection criteria
     - Implementation checklists
+    
+    ⛔ REJECTED - Using paragraph text instead of HTML lists:
+    ```
+    <p>The key benefits are:</p>
+    <p>Speed improvements</p>
+    <p>Better accuracy</p>
+    <p>Lower costs</p>
+    ```
+    ❌ This is inconsistent formatting. Use <ul> tags.
     
     ⛔ REJECTED - List items duplicating paragraph text verbatim:
     ```
@@ -341,7 +386,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
     ```
     <p>Organizations adopting AI code assistants report three primary benefits: development 
     cycles accelerate by 30%, code review burden decreases by 25%, and automated testing 
-    catches 15% more bugs before production <a href="#source-1" class="citation">according to industry research</a>.</p>
+    catches 15% more bugs before production, according to industry research.</p>
     <ul>
       <li><strong>Speed:</strong> 30% faster development cycles with automated boilerplate</li>
       <li><strong>Efficiency:</strong> 25% reduction in manual code review time</li>
@@ -350,6 +395,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
     ```
     
     Format: 4-8 items per list, each item 8-15 words, introduced by lead-in sentence.
+    **VALIDATION: If any list-like content appears outside <ul>/<ol> tags, output is REJECTED.**
 
 12. **Conversational Tone**: Write as if explaining to a colleague. Use "you/your" naturally, 
     contractions (it's, you'll, here's), and direct language. Avoid banned AI phrases: "seamlessly", 
@@ -522,6 +568,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 • Priority order: 1) .gov/.edu 2) .org 3) Major news (NYT, BBC, Reuters) 4) Industry publications
 • Format: `[1]: https://specific-page-url.com/research/2025 – 8-15 word description`
 • **CRITICAL**: Use SPECIFIC PAGE URLs, NOT domain homepages
+• **CRITICAL**: Numbering MUST start at [1] and increment sequentially ([1], [2], [3], ...). NEVER start at [2].
 • Rejected: Personal blogs, social media, unknown domains, AI-generated content
 
 ✅ GOOD Examples:
@@ -533,6 +580,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 
 ❌ BAD Examples:
 ```
+[2]: https://www.nist.gov/... – WRONG! Must start at [1]
 [1]: https://github.com/ – GitHub homepage (too generic)
 [2]: https://medium.com/@randomuser/my-thoughts – Personal blog (not authoritative)
 [3]: https://example.com/ai – Unknown domain (not credible)

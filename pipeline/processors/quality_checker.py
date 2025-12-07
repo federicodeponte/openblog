@@ -80,6 +80,12 @@ class QualityChecker:
         report["critical_issues"].extend(QualityChecker._check_competitor_mentions(article))
         report["critical_issues"].extend(QualityChecker._check_html_validity(article))
         report["critical_issues"].extend(QualityChecker._check_paragraph_length_critical(article))
+        
+        # ROOT_LEVEL_FIX_PLAN.md checks (CRITICAL)
+        report["critical_issues"].extend(QualityChecker._check_academic_citations(article))
+        report["critical_issues"].extend(QualityChecker._check_em_dashes(article))
+        report["critical_issues"].extend(QualityChecker._check_malformed_headings(article))
+        report["critical_issues"].extend(QualityChecker._check_broken_citation_links(article))
 
         # Suggestion checks
         report["suggestions"].extend(QualityChecker._check_paragraph_length(article))
@@ -773,6 +779,83 @@ class QualityChecker:
                 issues.append(f"⚠️  Missing market authorities: {', '.join(missing_authorities[:3])} (found: {', '.join(found_authorities) if found_authorities else 'none'})")
             elif len(found_authorities) < len(required_authorities) // 2:
                 issues.append(f"⚠️  Low authority coverage: {len(found_authorities)}/{len(required_authorities)} mentioned (target: most authorities)")
+        
+        return issues
+
+    @staticmethod
+    def _check_academic_citations(article: Dict[str, Any]) -> List[str]:
+        """
+        Check for forbidden academic citations [N].
+        ROOT_LEVEL_FIX_PLAN.md Issue 1.
+        """
+        issues = []
+        
+        # Check all content fields for [N] patterns
+        for key in article:
+            value = article.get(key, "")
+            if isinstance(value, str) and re.search(r'\[\d+\]', value):
+                issues.append(f"❌ CRITICAL: Academic citations [N] found in {key} (FORBIDDEN)")
+        
+        return issues
+    
+    @staticmethod
+    def _check_em_dashes(article: Dict[str, Any]) -> List[str]:
+        """
+        Check for forbidden em dashes (—).
+        ROOT_LEVEL_FIX_PLAN.md Issue 2.
+        """
+        issues = []
+        em_dash_patterns = [r'—', r'&mdash;', r'&#8212;', r'&#x2014;']
+        
+        for key in article:
+            value = article.get(key, "")
+            if isinstance(value, str):
+                for pattern in em_dash_patterns:
+                    if re.search(pattern, value):
+                        issues.append(f"❌ CRITICAL: Em dash found in {key} (FORBIDDEN)")
+                        break
+        
+        return issues
+    
+    @staticmethod
+    def _check_malformed_headings(article: Dict[str, Any]) -> List[str]:
+        """
+        Check for malformed headings (double question prefixes).
+        ROOT_LEVEL_FIX_PLAN.md Issue A.
+        """
+        issues = []
+        
+        # Check section titles and PAA/FAQ questions
+        heading_keys = [k for k in article.keys() if ('title' in k or 'question' in k)]
+        
+        for key in heading_keys:
+            heading = article.get(key, "")
+            if not heading:
+                continue
+            
+            # Check for "What is How/Why/What/When" patterns
+            if re.search(r'^What is (How|Why|What|When|Where|Who)\b', heading, re.IGNORECASE):
+                issues.append(f"❌ CRITICAL: Malformed heading in {key}: '{heading}' (duplicate question prefix)")
+            
+            # Check for double punctuation
+            if re.search(r'\?{2,}|!{2,}|\.{2,}', heading):
+                issues.append(f"❌ CRITICAL: Double punctuation in {key}: '{heading}'")
+        
+        return issues
+    
+    @staticmethod
+    def _check_broken_citation_links(article: Dict[str, Any]) -> List[str]:
+        """
+        Check for broken #source-N citation links.
+        ROOT_LEVEL_FIX_PLAN.md Issue C.
+        """
+        issues = []
+        
+        # Check content for #source-N links
+        for key in article:
+            value = article.get(key, "")
+            if isinstance(value, str) and re.search(r'href=["\']#source-\d+["\']', value):
+                issues.append(f"❌ CRITICAL: Broken #source-N citation link found in {key} (must use natural language attribution)")
         
         return issues
 
