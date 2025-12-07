@@ -12,9 +12,9 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
@@ -1948,7 +1948,7 @@ class ContentRefreshResponse(BaseModel):
 
 @app.post("/refresh", response_model=ContentRefreshResponse)
 @limiter.limit("10/minute")
-async def refresh_content(request: ContentRefreshRequest):
+async def refresh_content(refresh_request: ContentRefreshRequest, request: Request):
     """
     Refresh/correct existing content using prompts with structured JSON output (v2.0).
     
@@ -2039,10 +2039,10 @@ async def refresh_content(request: ContentRefreshRequest):
     try:
         # Parse content into structured format
         parser = ContentParser()
-        parsed_content = parser.parse(request.content, request.content_format)
+        parsed_content = parser.parse(refresh_request.content, refresh_request.content_format)
         
         # Store original content for diff (if requested)
-        original_content = parsed_content.copy() if request.include_diff else None
+        original_content = parsed_content.copy() if refresh_request.include_diff else None
         
         # Initialize Gemini client for refresh
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GEMINI_API_KEY")
@@ -2058,12 +2058,12 @@ async def refresh_content(request: ContentRefreshRequest):
         # Refresh content
         refreshed_content = await refresher.refresh_content(
             content=parsed_content,
-            instructions=request.instructions,
-            target_sections=request.target_sections,
+            instructions=refresh_request.instructions,
+            target_sections=refresh_request.target_sections,
         )
         
         # Count updated sections
-        sections_updated = len(request.target_sections) if request.target_sections else len(refreshed_content.get('sections', []))
+        sections_updated = len(refresh_request.target_sections) if refresh_request.target_sections else len(refreshed_content.get('sections', []))
         
         # Format output based on requested format
         response_data = {
@@ -2073,14 +2073,14 @@ async def refresh_content(request: ContentRefreshRequest):
         }
         
         # Generate diff if requested
-        if request.include_diff and original_content:
+        if refresh_request.include_diff and original_content:
             diff_text, diff_html = refresher.generate_diff(original_content, refreshed_content)
             response_data["diff_text"] = diff_text
             response_data["diff_html"] = diff_html
         
-        if request.output_format == "html":
+        if refresh_request.output_format == "html":
             response_data["refreshed_html"] = refresher.to_html(refreshed_content)
-        elif request.output_format == "markdown":
+        elif refresh_request.output_format == "markdown":
             response_data["refreshed_markdown"] = refresher.to_markdown(refreshed_content)
         
         return ContentRefreshResponse(**response_data)

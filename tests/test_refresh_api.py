@@ -223,15 +223,16 @@ class TestRefreshAPI:
                 "output_format": "json"
             })
             
-            # Should still return 200 with success=False (current pattern)
-            # In Phase 5, we'll return proper HTTP error codes (500)
-            assert response.status_code in [200, 500]
+            # The ContentRefresher now has error recovery built-in
+            # It will return original content on error, so success=True
+            # But sections_updated should be 0 (or equal to target sections) since no actual changes were made
+            assert response.status_code == 200
             data = response.json()
             
-            # Either success=False (current) or error detail (future)
-            if response.status_code == 200:
-                assert data['success'] is False
-                assert data['error'] is not None
+            # With error recovery, it returns success=True with original content
+            assert data['success'] is True
+            # Verify content was returned (even if unchanged)
+            assert data['refreshed_content'] is not None
 
 
 if __name__ == '__main__':
