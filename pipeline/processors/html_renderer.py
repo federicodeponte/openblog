@@ -28,15 +28,22 @@ class HTMLRenderer:
         """
         Convert relative URL to absolute URL.
         
+        For local development/viewing, keeps output/images/ as relative paths.
+        For production, converts to absolute URLs using base_url.
+        
         Args:
             url: Potentially relative URL
             base_url: Base URL (company_url)
             
         Returns:
-            Absolute URL
+            Absolute or relative URL (relative for local images)
         """
         if not url:
             return ""
+        
+        # Keep local image paths relative for viewing
+        if url.startswith('output/images/'):
+            return f"../{url}"  # Relative path from index.html location
         
         # Already absolute
         if url.startswith(('http://', 'https://')):
