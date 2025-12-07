@@ -730,6 +730,15 @@ class HTMLRenderer:
         content = re.sub(r'<p>\s*<strong>[^<]+:</strong>\s*</p>', '', content)
         logger.info("🧹 Removed empty label paragraphs")
         
+        # STEP 0.6: FIX SENTENCE FRAGMENTS AT START OF PARAGRAPHS (Gemini bug)
+        # Gemini sometimes splits sentences incorrectly, creating fragments like:
+        # "<p>Some text</p><p>. However, more text</p>" → "<p>Some text. However, more text</p>"
+        # "<p>Some text</p><p>What is as these...</p>" → "<p>Some text What is as these...</p>"
+        # Pattern: </p><p> followed by punctuation or fragment word
+        content = re.sub(r'</p>\s*<p>(\s*[.,;:])', r'\1', content)  # Join punctuation fragments
+        content = re.sub(r'</p>\s*<p>(This is |What is |That\'s why |If you want |When you )', r' \1', content)  # Join phrase fragments
+        logger.info("🔧 Fixed sentence fragments at paragraph starts")
+        
         # STEP 1: Humanize language (remove AI markers)
         content = HTMLRenderer._humanize_content(content)
         
