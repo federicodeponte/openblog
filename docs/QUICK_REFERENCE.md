@@ -139,7 +139,7 @@ GOOGLE_DRIVE_ENABLED="false"
 
 | Service | Stage | Purpose | Setup | Complexity |
 |---------|-------|---------|-------|-----------|
-| Gemini 2.5 Pro API | 2, 3, 5, 6, 8 | Content generation, extraction, agents | API key + Google Project | Medium |
+| Gemini 3.0 Pro API | 2, 3, 5, 6, 8 | Content generation, extraction, agents | API key + Google Project | Medium |
 | Supabase | 0, 11 | Fetch job config, store article | URL + API key + service role | Medium |
 | Google Search | 4, 5 | Web search (AI Agent3, link validation) | Serper.dev or Google Search API | Medium |
 | Image API | 9 | Generate article images | Replicate/DALL-E/other | Medium |

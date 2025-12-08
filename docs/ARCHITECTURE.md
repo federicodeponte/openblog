@@ -135,7 +135,7 @@ SEQUENTIAL STAGES (0-3)
 ┌──────────────────────────────────────────────────────────────────┐
 │ STAGE 2: GEMINI CONTENT GENERATION (v4.1 Phase 2: Step 5)       │
 ├──────────────────────────────────────────────────────────────────┤
-│ • Call Gemini 2.5 Pro API with:                                  │
+│ • Call Gemini 3.0 Pro API with:                                  │
 │   - Main article prompt                                          │
 │   - Tools ENABLED: googleSearch, urlContext (v4.1 feature!)      │
 │   - Temperature: 0.2 (consistency)                               │
@@ -624,7 +624,7 @@ config = GenerateContentConfig(
 )
 
 response = client.models.generate_content(
-    model="gemini-2.5-pro",
+    model="gemini-3-pro-preview",
     contents=prompt,
     config=config
 )
@@ -633,7 +633,7 @@ raw_article = response.text  # Plain text with embedded JSON
 ```
 
 - **Key Operations**:
-  - Call Gemini 2.5 Pro API with tools ENABLED
+  - Call Gemini 3.0 Pro API with tools ENABLED
   - Tools integration (critical for v4.1 parity):
     - **googleSearch**: Conducts real-time web searches during content generation
     - **urlContext**: Grounds citations with specific URLs
@@ -1184,7 +1184,7 @@ merged = merge_inputs_intelligently(merge_inputs)
 # Required environment variables:
 GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 GEMINI_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
-GEMINI_MODEL = "gemini-2.5-pro"
+GEMINI_MODEL = "gemini-3-pro-preview"
 
 # Retry configuration:
 GEMINI_RETRY_MAX = 3
@@ -1230,7 +1230,7 @@ config = GenerateContentConfig(
 ##### Integration with Gemini Client
 ```python
 class GeminiClient:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-pro"):
+    def __init__(self, api_key: str, model: str = "gemini-3-pro-preview"):
         self.client = genai.Client(api_key=api_key)
         self.model = model
 
@@ -1456,7 +1456,7 @@ v4.1 workflow has multiple node categories:
 
 | Tool/Service | Stage | Purpose | v4.1 Enabled? | Configuration |
 |---|---|---|---|---|
-| **Gemini 2.5 Pro API** | 2 | Main content generation | YES | googleSearch + urlContext tools |
+| **Gemini 3.0 Pro API** | 2 | Main content generation | YES | googleSearch + urlContext tools |
 | **Google Search** | 2, 4 | Real-time web search (via googleSearch tool) | YES | Via Gemini tools |
 | **Serper API / Search** | 4 | Find alternative URLs for failed citations | YES | serperTool in AI Agent3 |
 | **HTTP HEAD Requests** | 4, 5 | Validate URL accessibility | YES | validTool in AI Agent3 + URL status checks |
@@ -1940,7 +1940,7 @@ Tier 3: External API errors
 
 ```python
 # Model settings
-GEMINI_MODEL = "gemini-2.5-pro"
+GEMINI_MODEL = "gemini-3-pro-preview"
 GEMINI_TEMPERATURE = 0.2
 GEMINI_MAX_TOKENS = 65536
 GEMINI_TOOLS = ["googleSearch", "urlContext"]

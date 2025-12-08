@@ -354,7 +354,7 @@ config = GenerateContentConfig(
 - [ ] Initialize Gemini client with tools ENABLED
 - [ ] Load baseline prompt (use your template from PYTHON_WORKFLOW_ARCHITECTURE.md)
 - [ ] Inject variables: keyword, company_info, language, competitors, links
-- [ ] Call Gemini 2.5 Pro with text/plain + tools config
+- [ ] Call Gemini 3.0 Pro with text/plain + tools config
 - [ ] Handle streaming response
 - [ ] Extract JSON blocks from plain text response (regex: `\{[\s\S]*?\}`)
 - [ ] Parse and concatenate JSON blocks

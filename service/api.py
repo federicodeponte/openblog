@@ -1769,7 +1769,7 @@ Market Quality Standards: {market_config.get('quality_note', f'Professional stan
 Content to translate:
 {json.dumps(content_to_translate, ensure_ascii=False, indent=2)}"""
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key={api_key}"
         
         payload = {
             "contents": [{
@@ -2171,7 +2171,7 @@ async def debug_environment():
                         tools = [Tool(google_search=GoogleSearch())]
                         config = GenerateContentConfig(tools=tools, max_output_tokens=100)
                         test_response = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                            model="gemini-3-pro-preview",
                             contents="What is the capital of France? Use search to confirm.",
                             config=config,
                         )

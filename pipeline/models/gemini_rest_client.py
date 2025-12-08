@@ -6,6 +6,7 @@ No SDK dependency - works with any Gemini model.
 
 Supports:
 - gemini-3-pro (latest)
+- gemini-3-pro-preview
 - gemini-2.5-pro
 - gemini-2.5-flash
 - gemini-2.5-flash-lite
@@ -30,13 +31,13 @@ class GeminiRestClient:
 
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-3-pro-preview"):
         """
         Initialize Gemini REST client.
 
         Args:
             api_key: Google API key (uses GOOGLE_API_KEY env var if not provided)
-            model: Model to use (default: gemini-2.5-flash)
+            model: Model to use (default: gemini-3-pro-preview)
         """
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
@@ -235,14 +236,14 @@ Respond ONLY with valid JSON, no markdown, no explanation."""
 # Convenience function
 def create_gemini_client(
     api_key: Optional[str] = None,
-    model: str = "gemini-2.5-flash",
+    model: str = "gemini-3-pro-preview",
 ) -> GeminiRestClient:
     """
     Create a Gemini REST API client.
 
     Args:
         api_key: Google API key (uses env var if not provided)
-        model: Model name (default: gemini-2.5-flash)
+        model: Model name (default: gemini-3-pro-preview)
 
     Returns:
         GeminiRestClient instance
