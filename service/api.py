@@ -731,8 +731,14 @@ async def _async_generate_and_save(request: AsyncBlogRequest, job_id: str):
     start_time = datetime.now()
     
     try:
-        # Initialize Supabase client
-        supabase = create_client(request.supabase_url, request.supabase_service_key)
+        # Initialize Supabase client - use request params if provided, otherwise fall back to env vars
+        supabase_url = request.supabase_url or os.getenv("SUPABASE_URL")
+        supabase_service_key = request.supabase_service_key or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not supabase_service_key:
+            raise ValueError("Supabase credentials not found. Provide supabase_url and supabase_service_key in request, or set SUPABASE_URL and SUPABASE_KEY/SUPABASE_SERVICE_ROLE_KEY environment variables.")
+        
+        supabase = create_client(supabase_url, supabase_service_key)
         
         # Update status to 'generating'
         supabase.table('articles').update({
@@ -1090,17 +1096,22 @@ async def write_blog_async(request: AsyncBlogRequest):
     try:
         # Build client_info with Supabase integration details BEFORE creating job config
         client_info = request.client_info or {}
-        if request.article_id and request.supabase_url and request.supabase_service_key:
-            # Add Supabase integration info to client_info
-            client_info = {
-                **client_info,
-                "article_id": request.article_id,
-                "supabase_url": request.supabase_url,
-                "supabase_service_key": request.supabase_service_key,
-                "gdoc_folder_id": request.gdoc_folder_id,
-                "keyword_id": request.keyword_id,
-                "project_id": request.project_id,
-            }
+        if request.article_id:
+            # Use request params if provided, otherwise fall back to env vars
+            supabase_url = request.supabase_url or os.getenv("SUPABASE_URL")
+            supabase_service_key = request.supabase_service_key or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            
+            # Add Supabase integration info to client_info (only if we have credentials)
+            if supabase_url and supabase_service_key:
+                client_info = {
+                    **client_info,
+                    "article_id": request.article_id,
+                    "supabase_url": supabase_url,
+                    "supabase_service_key": supabase_service_key,
+                    "gdoc_folder_id": request.gdoc_folder_id,
+                    "keyword_id": request.keyword_id,
+                    "project_id": request.project_id,
+                }
         
         # Build job configuration with client_info included
         job_config = JobConfig(

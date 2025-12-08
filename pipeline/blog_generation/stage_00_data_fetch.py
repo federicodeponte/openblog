@@ -26,7 +26,7 @@ Output:
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse
 import re
 
@@ -263,8 +263,12 @@ class DataFetchStage(Stage):
 
         for field in override_fields:
             if field in job_config and job_config[field]:
-                company_data[field] = job_config[field]
-                logger.debug(f"Override {field}: {job_config[field]}")
+                value = job_config[field]
+                # Special handling for competitors: normalize comma-separated strings
+                if field == "company_competitors" and isinstance(value, list):
+                    value = self._normalize_competitors_list(value)
+                company_data[field] = value
+                logger.debug(f"Override {field}: {value}")
         
         # Also check for author fields inside job_config["company_data"] (from API request)
         if "company_data" in job_config and isinstance(job_config["company_data"], dict):
@@ -274,8 +278,56 @@ class DataFetchStage(Stage):
                 if field in nested_company_data and nested_company_data[field]:
                     company_data[field] = nested_company_data[field]
                     logger.debug(f"Override {field} from company_data: {nested_company_data[field]}")
+            
+            # Also handle competitors from nested company_data
+            if "competitors" in nested_company_data:
+                competitors = nested_company_data["competitors"]
+                if isinstance(competitors, list):
+                    competitors = self._normalize_competitors_list(competitors)
+                company_data["company_competitors"] = competitors
+                logger.debug(f"Override company_competitors from company_data: {competitors}")
 
         return company_data
+    
+    def _normalize_competitors_list(self, competitors: List[Any]) -> List[str]:
+        """
+        Normalize competitors list to handle both formats:
+        - ["competitor1.com", "competitor2.com"] (proper format)
+        - ["competitor1.com, competitor2.com"] (comma-separated string in list)
+        
+        Args:
+            competitors: List of competitors (may contain comma-separated strings)
+            
+        Returns:
+            Normalized list of individual competitor strings
+        """
+        if not competitors:
+            return []
+        
+        normalized = []
+        for item in competitors:
+            if isinstance(item, str):
+                # Check if it's a comma-separated string
+                if "," in item:
+                    # Split by comma and clean up
+                    split_items = [comp.strip() for comp in item.split(",") if comp.strip()]
+                    normalized.extend(split_items)
+                else:
+                    # Single competitor string
+                    normalized.append(item.strip())
+            elif isinstance(item, (list, tuple)):
+                # Nested list (shouldn't happen, but handle it)
+                normalized.extend(self._normalize_competitors_list(item))
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        result = []
+        for comp in normalized:
+            if comp and comp.lower() not in seen:
+                seen.add(comp.lower())
+                result.append(comp)
+        
+        return result
 
     def _build_blog_page(
         self, job_config: Dict[str, Any], company_data: Dict[str, Any]

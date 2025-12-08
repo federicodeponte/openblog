@@ -251,17 +251,29 @@ class GeminiClient:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable required")
         
-        # Initialize client with v1alpha API version for Gemini 3.0 Pro Preview
+        # Determine API version based on model
+        # Flash models (2.5-flash, 2.5-flash-lite) require v1beta
+        # Preview models (3.0-pro-preview) use v1alpha
+        is_flash_model = 'flash' in self.MODEL.lower()
+        api_version = 'v1beta' if is_flash_model else 'v1alpha'
+        
+        # Normalize Flash model name (remove -preview suffix if present)
+        if is_flash_model and self.MODEL.endswith('-preview'):
+            # Use standard Flash model name for v1beta
+            normalized_model = self.MODEL.replace('-preview', '')
+            logger.info(f"Normalizing Flash model: {self.MODEL} → {normalized_model}")
+            self.MODEL = normalized_model
+        
+        # Initialize client with appropriate API version
         try:
             from google import genai
             from google.genai import types
-            # Use v1alpha API version for preview models
             self.client = genai.Client(
                 api_key=self.api_key,
-                http_options=types.HttpOptions(api_version='v1alpha')
+                http_options=types.HttpOptions(api_version=api_version)
             )
             self._genai = genai
-            logger.info(f"AI client initialized (model: {self.MODEL}, backend: google-genai SDK, API: v1alpha)")
+            logger.info(f"AI client initialized (model: {self.MODEL}, backend: google-genai SDK, API: {api_version})")
         except ImportError:
             raise ImportError("google-genai package required. Install with: pip install google-genai")
 

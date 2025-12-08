@@ -116,25 +116,45 @@ class CitationURLValidator:
         logger.debug(f"Step 1: Checking original URL status...")
         is_valid, final_url = await self._check_url_status(url)
         
-        # Step 1a: Validate URL is a specific page, not just domain homepage
+        # CRITICAL FIX: If URL is valid (200), keep it even if not perfectly specific
+        # Only try to find more specific page if URL is invalid or clearly just a domain
         is_specific_page = self._is_specific_page_url(final_url)
-        if not is_specific_page:
-            logger.warning(f"  ⚠️  URL appears to be domain homepage, not specific page: {final_url}")
-            logger.info(f"  Searching for specific page URL...")
-            # Try to find a specific page URL using the title
-            specific_url = await self._find_specific_page_url(title, final_url, company_url, competitors, language)
-            if specific_url:
-                final_url = specific_url
-                logger.info(f"  ✅ Found specific page URL: {final_url}")
+        
+        # Only search for specific page if:
+        # 1. URL is valid BUT it's clearly just a domain homepage (no path at all)
+        # 2. Don't replace valid URLs that have any path - they're likely correct
+        if is_valid and not is_specific_page:
+            # Check if it's truly just a domain (no path)
+            url_clean = final_url.replace('https://', '').replace('http://', '').strip('/')
+            if '/' not in url_clean or url_clean.split('/')[1] in ['', 'index.html', 'index', 'home']:
+                logger.warning(f"  ⚠️  URL is valid but appears to be domain homepage: {final_url}")
+                logger.info(f"  Attempting to find more specific page URL...")
+                # Try to find a specific page URL using the title
+                specific_url = await self._find_specific_page_url(title, final_url, company_url, competitors, language)
+                if specific_url:
+                    # Validate the specific URL before using it
+                    specific_valid, specific_final = await self._check_url_status(specific_url)
+                    if specific_valid:
+                        final_url = specific_final
+                        logger.info(f"  ✅ Found and validated specific page URL: {final_url}")
+                    else:
+                        logger.warning(f"  ⚠️  Specific URL found but invalid, keeping original: {final_url}")
+                else:
+                    logger.info(f"  ℹ️  Could not find more specific page, keeping valid original URL")
             else:
-                logger.warning(f"  ⚠️  Could not find specific page, using domain URL")
+                # URL has a path, even if not perfectly specific, keep it if valid
+                logger.info(f"  ℹ️  URL has path and is valid, keeping original: {final_url}")
         
         logger.info(f"  Original URL status: {'✅ VALID (200)' if is_valid else '❌ INVALID (non-200)'}")
         
         if is_valid:
             # URL is valid, check if it should be filtered
-            if self._should_filter_url(final_url, company_url, competitors):
-                logger.warning(f"  Step 2: URL filtered (competitor/internal/forbidden): {final_url}")
+            # CRITICAL FIX: Company URLs should NOT be filtered for citations
+            # Company URLs (e.g., cello.so/customers) are valid citations (case studies, customer pages)
+            # Only filter if it's a competitor or forbidden domain, NOT company domain
+            should_filter = self._should_filter_url(final_url, company_url, competitors, filter_company=False)
+            if should_filter:
+                logger.warning(f"  Step 2: URL filtered (competitor/forbidden): {final_url}")
                 logger.info(f"  Step 3: Searching for alternative...")
                 # Search for alternative
                 alternative = await self._find_alternative_url(
@@ -149,31 +169,87 @@ class CitationURLValidator:
                 logger.info(f"=" * 80)
                 return False, url, title
             else:
-                # URL is valid and passes filters
-                logger.info(f"  ✅ RESULT: Original URL validated and accepted")
+                # URL is valid and passes filters - KEEP IT (don't replace with fallbacks)
+                logger.info(f"  ✅ RESULT: Original URL validated and accepted: {final_url}")
                 logger.info(f"=" * 80)
                 return True, final_url, title
         
         # Step 2: URL is invalid (404/non-200), search for alternative
-        logger.info(f"  Step 2: Original URL invalid, searching for alternative...")
+        logger.info(f"  Step 2: Original URL invalid (404), searching for alternative...")
         
+        # CRITICAL FIX: Try multiple search strategies for better alternative finding
+        alternative = None
+        
+        # Strategy 1: Search with full title
         alternative = await self._find_alternative_url(
             title, company_url, competitors, language
         )
         
-        if alternative:
-            logger.info(f"  ✅ RESULT: Alternative URL found and validated")
-            logger.info(f"    New URL: {alternative[0]}")
-            logger.info(f"    New Title: {alternative[1][:60]}...")
-            logger.info(f"=" * 80)
-            return True, alternative[0], alternative[1]
+        # Strategy 2: If that fails, try searching on the same domain
+        if not alternative:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            domain = parsed.netloc or url.replace('https://', '').replace('http://', '').split('/')[0]
+            if domain:
+                logger.info(f"  Trying domain-specific search: {domain}")
+                domain_alternative = await self._find_specific_page_url(
+                    title, f"https://{domain}", company_url, competitors, language
+                )
+                if domain_alternative:
+                    # Validate the domain-specific URL
+                    alt_valid, alt_final = await self._check_url_status(domain_alternative)
+                    if alt_valid:
+                        logger.info(f"  ✅ Found valid domain-specific alternative: {domain_alternative}")
+                        alternative = (domain_alternative, title)
         
-        # Step 3: All searches failed, keep original URL but mark as invalid
-        logger.error(f"  ❌ RESULT: No valid alternative found")
-        logger.error(f"    Keeping original URL: {url}")
-        logger.error(f"    Citation marked as INVALID")
+        # Strategy 3: Try searching with simplified query (extract key terms)
+        if not alternative:
+            # Extract key terms from title (remove common words)
+            import re
+            key_terms = re.sub(r'\b(the|a|an|on|in|at|for|with|to|from|of|and|or|but)\b', '', title, flags=re.IGNORECASE)
+            key_terms = ' '.join(key_terms.split()[:5])  # First 5 meaningful words
+            if key_terms and len(key_terms) > 10:
+                logger.info(f"  Trying simplified search query: {key_terms}")
+                alternative = await self._find_alternative_url(
+                    key_terms, company_url, competitors, language
+                )
+        
+        if alternative:
+            # CRITICAL FIX: Only use alternative if it's clearly better than original
+            # Don't replace with generic authority fallbacks (pewresearch.org, nist.gov) unless absolutely necessary
+            alternative_url = alternative[0]
+            
+            # Check if alternative is a generic authority fallback
+            is_generic_fallback = any(domain in alternative_url.lower() for domain in [
+                'pewresearch.org', 'nist.gov', 'census.gov', 'statista.com'
+            ])
+            
+            if is_generic_fallback:
+                logger.warning(f"  ⚠️  Alternative is generic authority fallback: {alternative_url}")
+                logger.warning(f"  ⚠️  Preferring to keep original URL even if invalid")
+                logger.error(f"  ❌ RESULT: No good alternative found, keeping original URL")
+                logger.info(f"=" * 80)
+                return False, url, title
+            
+            # Validate the alternative URL before using it
+            alt_valid, alt_final = await self._check_url_status(alternative_url)
+            if alt_valid:
+                logger.info(f"  ✅ RESULT: Alternative URL found and validated")
+                logger.info(f"    New URL: {alternative[0]}")
+                logger.info(f"    New Title: {alternative[1][:60]}...")
+                logger.info(f"=" * 80)
+                return True, alternative[0], alternative[1]
+            else:
+                logger.warning(f"  ⚠️  Alternative URL also invalid (404): {alternative_url}")
+        
+        # Step 3: All searches failed
+        # CRITICAL FIX: Reject invalid URLs (404s) - don't keep them even if they're company URLs
+        # Invalid URLs break user trust and harm SEO, regardless of domain
+        logger.error(f"  ❌ RESULT: No valid alternative found after multiple attempts")
+        logger.error(f"    Original URL is invalid (404): {url}")
+        logger.error(f"    Citation will be REJECTED (invalid URLs are not acceptable)")
         logger.info(f"=" * 80)
-        return False, url, title
+        return False, url, title  # Return False to signal rejection
 
     async def _check_url_status(self, url: str) -> Tuple[bool, str]:
         """
@@ -184,12 +260,14 @@ class CitationURLValidator:
         - Check statusCode 200
         - Follow redirects (limited to 3)
         - Detect error pages
+        - Detect soft 404s (200 OK but 404 content)
         
         OPTIMIZED:
         - 5-minute cache for repeated URL checks
         - Shorter timeout (3s default)
         - Limited redirects (max 3)
         - Fast failure on timeout
+        - Content analysis for soft 404s (only when HEAD returns 200)
         
         Args:
             url: URL to check
@@ -197,6 +275,12 @@ class CitationURLValidator:
         Returns:
             Tuple of (is_valid, final_url)
         """
+        # CRITICAL FIX: Validate URL format before making HTTP request
+        # Reject malformed URLs like https://www.saas/ (missing TLD)
+        if not self._is_valid_url_format(url):
+            logger.warning(f"Invalid URL format rejected: {url}")
+            return False, url
+        
         # PERFORMANCE: Check cache first with different TTLs for success/failure
         current_time = time.time()
         if url in _URL_STATUS_CACHE:
@@ -210,26 +294,46 @@ class CitationURLValidator:
         try:
             # Try HEAD first (lightweight, fast)
             # OPTIMIZED: Use asyncio.wait_for to enforce strict timeout
-            response = await asyncio.wait_for(
-                self.http_client.head(url),
-                timeout=self.timeout + 0.5  # Add small buffer
-            )
+            try:
+                response = await asyncio.wait_for(
+                    self.http_client.head(url, follow_redirects=True),
+                    timeout=self.timeout + 0.5  # Add small buffer
+                )
+            except httpx.HTTPStatusError as e:
+                # Some servers return errors on HEAD, try GET instead
+                logger.debug(f"HEAD request failed for {url}, trying GET: {e}")
+                response = await asyncio.wait_for(
+                    self.http_client.get(url, follow_redirects=True),
+                    timeout=self.timeout + 0.5
+                )
+            
             final_url = str(response.url)
             
-            # Check status code
-            if response.status_code == 200:
+            # Check status code - CRITICAL: Check actual status code first
+            if response.status_code == 404:
+                # Explicit 404 - cache and return immediately
+                logger.warning(f"HTTP 404 detected: {final_url}")
+                _URL_STATUS_CACHE[url] = (False, final_url, current_time)
+                return False, final_url
+            elif response.status_code == 200:
                 # Check for error page indicators in URL path
                 if self._is_error_page_url(final_url):
                     # Cache negative result
                     _URL_STATUS_CACHE[url] = (False, final_url, current_time)
                     return False, final_url
+                
+                # CRITICAL FIX: Always check for soft 404s when status is 200
+                # Some sites return 200 OK but show 404 content (soft 404)
+                is_soft_404 = await self._check_soft_404(final_url)
+                if is_soft_404:
+                    logger.warning(f"Soft 404 detected (200 OK but 404 content): {final_url}")
+                    # Cache negative result
+                    _URL_STATUS_CACHE[url] = (False, final_url, current_time)
+                    return False, final_url
+                
                 # Cache positive result
                 _URL_STATUS_CACHE[url] = (True, final_url, current_time)
                 return True, final_url
-            elif response.status_code == 404:
-                # Cache 404 result
-                _URL_STATUS_CACHE[url] = (False, final_url, current_time)
-                return False, final_url
             elif response.status_code in (301, 302, 303, 307, 308):
                 # Follow redirect (limited to 3 redirects by httpx config)
                 try:
@@ -265,6 +369,58 @@ class CitationURLValidator:
             logger.debug(f"Error checking URL {url}: {e}")
             return False, url
 
+    def _is_valid_url_format(self, url: str) -> bool:
+        """
+        Validate URL format before making HTTP request.
+        
+        Rejects:
+        - Malformed URLs like https://www.saas/ (missing TLD)
+        - Invalid domain structures
+        - Relative URLs without proper domain
+        
+        Args:
+            url: URL to validate
+            
+        Returns:
+            True if URL format is valid
+        """
+        try:
+            parsed = urlparse(url)
+            
+            # Must have scheme (http/https)
+            if not parsed.scheme or parsed.scheme not in ['http', 'https']:
+                return False
+            
+            # Must have netloc (domain)
+            if not parsed.netloc:
+                return False
+            
+            # Check domain structure
+            domain = parsed.netloc.lower()
+            
+            # Reject domains without TLD (like "www.saas" or "saas")
+            # Valid domains should have at least one dot (e.g., "example.com")
+            # Exception: localhost and IP addresses
+            if '.' not in domain and domain not in ['localhost']:
+                # Check if it's an IP address
+                try:
+                    import ipaddress
+                    ipaddress.ip_address(domain)
+                    return True  # IP addresses are valid
+                except ValueError:
+                    return False  # Not an IP and no TLD
+            
+            # Reject domains ending with just a slash (like "www.saas/")
+            # This is caught by netloc check above, but double-check
+            if domain.endswith('/'):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"URL format validation error for {url}: {e}")
+            return False
+    
     def _is_error_page_url(self, url: str) -> bool:
         """
         Check if URL appears to be an error page.
@@ -287,6 +443,193 @@ class CitationURLValidator:
             "/404-error",
         ]
         return any(pattern in url_lower for pattern in error_patterns)
+    
+    async def _check_soft_404(self, url: str) -> bool:
+        """
+        Check for soft 404s - pages that return 200 OK but contain 404 error content.
+        
+        Some websites (like Paddle) return HTTP 200 with a 404 error page. This method
+        fetches the page content and checks for indicators that it's actually a 404 page.
+        
+        Args:
+            url: URL to check
+            
+        Returns:
+            True if page appears to be a soft 404 (200 OK but 404 content)
+        """
+        try:
+            # Fetch page content (limited size for performance)
+            get_response = await asyncio.wait_for(
+                self.http_client.get(url, follow_redirects=True),
+                timeout=self.timeout + 0.5
+            )
+            
+            # CRITICAL FIX: Check actual HTTP status code first
+            # If it's a real 404, return True immediately (this is a hard 404, not soft)
+            if get_response.status_code == 404:
+                logger.debug(f"Hard 404 detected in soft 404 check: {url}")
+                return True  # Treat as invalid
+            
+            if get_response.status_code != 200:
+                return False  # Not a soft 404 if status isn't 200
+            
+            # Read content (limit to first 50KB to avoid memory issues)
+            content = await get_response.aread()
+            content_text = content[:50000].decode('utf-8', errors='ignore').lower()
+            
+            # CRITICAL FIX: Check for 404 indicators in HTML title tag
+            title_match = re.search(r'<title[^>]*>([^<]+)</title>', content_text, re.IGNORECASE)
+            if title_match:
+                title = title_match.group(1).lower()
+                soft_404_title_patterns = [
+                    '404',
+                    'not found',
+                    'page not found',
+                    'error 404',
+                    '404 error',
+                    'page does not exist',
+                    'cannot be found',
+                    "can't find",
+                    'does not exist',
+                    'sorry',
+                    'error',
+                    "doesn't exist",
+                    'page not available',
+                    'content not found',
+                    'resource not found',
+                    'not available',
+                    'unavailable',
+                    'removed',
+                    'deleted',
+                    'gone',
+                    'no longer available',
+                    'no longer exists',
+                    'moved permanently',
+                    'permanently moved',
+                    'something has gone wrong',  # Attio error page
+                    'something went wrong',  # Common error page
+                    'we\'ve run into an error',  # Attio error page
+                    'run into an error',  # Error page variant
+                    'investigating the issue',  # Error page message
+                    'contact support',  # Often on error pages
+                ]
+                if any(pattern in title for pattern in soft_404_title_patterns):
+                    logger.debug(f"Soft 404 detected in HTML title: {title_match.group(1)}")
+                    return True
+            
+            # CRITICAL FIX: Also check meta title (og:title, twitter:title, or meta name="title")
+            meta_title_patterns = [
+                r'<meta\s+property=["\']og:title["\'][^>]*content=["\']([^"\']+)["\']',
+                r'<meta\s+name=["\']twitter:title["\'][^>]*content=["\']([^"\']+)["\']',
+                r'<meta\s+name=["\']title["\'][^>]*content=["\']([^"\']+)["\']',
+            ]
+            
+            for pattern in meta_title_patterns:
+                meta_title_match = re.search(pattern, content_text, re.IGNORECASE)
+                if meta_title_match:
+                    meta_title = meta_title_match.group(1).lower()
+                    soft_404_meta_patterns = [
+                        '404',
+                        'not found',
+                        'page not found',
+                        'error 404',
+                        '404 error',
+                        'page does not exist',
+                        'cannot be found',
+                        "can't find",
+                        'does not exist',
+                        'sorry',
+                        'error',
+                        "doesn't exist",
+                        'page not available',
+                        'content not found',
+                        'resource not found',
+                        'not available',
+                        'unavailable',
+                        'removed',
+                        'deleted',
+                        'gone',
+                        'no longer available',
+                        'no longer exists',
+                        'moved permanently',
+                        'permanently moved',
+                        'oops',
+                        'something went wrong',
+                        'something has gone wrong',  # Attio error page
+                        'we\'ve run into an error',  # Attio error page
+                        'run into an error',  # Error page variant
+                        'we couldn\'t find',
+                        'we cannot find',
+                        'we can\'t find',
+                        'looks like',
+                        'seems like',
+                        'appears to be',
+                        'investigating the issue',  # Error page message
+                        'contact support',  # Often on error pages
+                        'reload and try again',  # Error page instruction
+                    ]
+                    if any(pattern in meta_title for pattern in soft_404_meta_patterns):
+                        logger.debug(f"Soft 404 detected in meta title: {meta_title_match.group(1)}")
+                        return True
+            
+            # Check for robots noindex meta tag (often present on error pages)
+            robots_match = re.search(r'<meta[^>]*name=["\']robots["\'][^>]*content=["\']([^"\']+)["\']', content_text, re.IGNORECASE)
+            if robots_match:
+                robots_content = robots_match.group(1).lower()
+                if 'noindex' in robots_content:
+                    # Check if page also has 404 indicators in body
+                    body_match = re.search(r'<body[^>]*>([^<]{0,500})', content_text, re.IGNORECASE | re.DOTALL)
+                    if body_match:
+                        body_snippet = body_match.group(1).lower()
+                        soft_404_body_patterns = [
+                            '404',
+                            'not found',
+                            'page not found',
+                            "can't find that page",
+                            "doesn't exist",
+                            'has been moved',
+                        ]
+                        if any(pattern in body_snippet for pattern in soft_404_body_patterns):
+                            logger.debug(f"Soft 404 detected: robots noindex + 404 content")
+                            return True
+            
+            # Check for common 404 error messages in body content
+            body_match = re.search(r'<body[^>]*>([^<]{0,1000})', content_text, re.IGNORECASE | re.DOTALL)
+            if body_match:
+                body_snippet = body_match.group(1).lower()
+                # Look for strong indicators of 404 pages
+                strong_404_indicators = [
+                    'sorry, we can\'t find that page',
+                    'sorry, we cannot find that page',
+                    'the page you\'re looking for doesn\'t exist',
+                    'the page you\'re looking for does not exist',
+                    'page not found',
+                    '404 page not found',
+                    'error 404',
+                    '404 error',
+                    'something has gone wrong',  # Attio error page
+                    'something went wrong',  # Common error page
+                    'we\'ve run into an error',  # Attio error page
+                    'run into an error',  # Error page variant
+                    'investigating the issue',  # Error page message
+                    'our team have been alerted',  # Error page message
+                    'reload and try again',  # Error page instruction
+                    'contact support',  # Often on error pages
+                    'the requested url was not found',  # Apache 404
+                    'not found on this server',  # Server 404 message
+                ]
+                if any(indicator in body_snippet for indicator in strong_404_indicators):
+                    logger.debug(f"Soft 404 detected in body content")
+                    return True
+            
+            return False  # Not a soft 404
+            
+        except asyncio.TimeoutError:
+            logger.debug(f"Timeout checking soft 404 for {url}")
+            return False  # Assume not soft 404 on timeout
+        except Exception as e:
+            logger.debug(f"Error checking soft 404 for {url}: {e}")
+            return False  # Assume not soft 404 on error
 
     async def _find_alternative_url(
         self,
@@ -345,8 +688,8 @@ If no authority source found: {{"url": "", "verified": false}}"""
             logger.debug(f"Calling Gemini for: {search_query[:50]}...")
             
             # SMART OPTIMIZATION: Use fast, targeted search with adaptive timeout
-            # Reduces timeout progressively if under time pressure
-            base_timeout = 20.0  # Increased from 12s to 20s for better alternative finding
+            # Gemini Flash 2.5 needs more time for web searches (can take 60-90s for complex queries)
+            base_timeout = 90.0  # Increased to 90s for Flash model web searches to prevent timeouts
             adaptive_timeout = min(base_timeout, self.timeout * 2.5)  # More generous scaling
             
             try:
@@ -359,7 +702,7 @@ If no authority source found: {{"url": "", "verified": false}}"""
                 )
                 logger.debug(f"Gemini response ({len(response_text)} chars): {response_text[:200]}...")
             except asyncio.TimeoutError:
-                logger.warning(f"Gemini search timed out after {base_timeout}s for: {search_query[:50]}...")
+                logger.warning(f"Gemini search timed out after {base_timeout:.0f}s for: {search_query[:50]}...")
                 # FALLBACK: Try domain authority sites for common topics
                 return await self._try_authority_fallback(search_query, company_url, competitors)
             except Exception as e:
@@ -701,8 +1044,12 @@ If no specific page found: {{"url": "", "verified": false}}"""
         """
         Fast fallback using high-authority domain patterns.
         
-        When Gemini search fails/times out, try common authority URLs
-        for known topics to maintain citation quality.
+        CRITICAL FIX: This fallback is now DISABLED to prevent replacing valid URLs
+        with generic authority sites. Generic fallbacks (pewresearch.org, nist.gov) 
+        are not appropriate replacements for specific company URLs.
+        
+        When Gemini search fails/times out, return None to preserve original URL
+        rather than replacing with unrelated generic authority sites.
         
         Args:
             search_query: Original search query
@@ -710,114 +1057,17 @@ If no specific page found: {{"url": "", "verified": false}}"""
             competitors: Competitor domains
             
         Returns:
-            Tuple of (url, title) if fallback found, None otherwise
+            None (fallback disabled to preserve original URLs)
         """
-        # PERFORMANCE: Check cache first
-        current_time = time.time()
-        cache_key = search_query[:100]  # Use first 100 chars as cache key
+        # CRITICAL FIX: Disable generic authority fallbacks
+        # These were causing valid URLs (cello.so/customers) to be replaced with
+        # unrelated generic sites (pewresearch.org, nist.gov)
+        logger.warning(f"⚠️  Authority fallback disabled - preserving original URL instead of generic replacement")
+        logger.warning(f"    Search query: {search_query[:50]}...")
+        logger.warning(f"    This prevents wrong URL replacements (e.g., cello.so → pewresearch.org)")
         
-        if cache_key in _AUTHORITY_CACHE:
-            cached_result, timestamp = _AUTHORITY_CACHE[cache_key]
-            if current_time - timestamp < _CACHE_TTL:
-                logger.debug(f"Authority fallback cache hit: {search_query[:30]}...")
-                return cached_result
-        
-        logger.info(f"Trying authority domain fallback for: {search_query[:50]}...")
-        
-        # Extract key topics from search query
-        query_lower = search_query.lower()
-        
-        # Authority domain patterns for common business topics
-        authority_patterns = [
-            # Business/Finance
-            {
-                "keywords": ["business", "finance", "economy", "revenue", "profit", "market", "enterprise"],
-                "urls": [
-                    ("https://www.investopedia.com/", "Investopedia"),
-                    ("https://hbr.org/", "Harvard Business Review"),
-                    ("https://www.census.gov/", "U.S. Census Bureau"),
-                    ("https://www.brookings.edu/", "Brookings Institution"),
-                ]
-            },
-            # Technology/AI
-            {
-                "keywords": ["ai", "artificial intelligence", "machine learning", "technology", "software", "automation"],
-                "urls": [
-                    ("https://www.nist.gov/", "NIST"),
-                    ("https://www.nature.com/", "Nature"),
-                    ("https://techcrunch.com/", "TechCrunch"),
-                    ("https://www.ieee.org/", "IEEE"),
-                ]
-            },
-            # Healthcare/Medical
-            {
-                "keywords": ["health", "medical", "healthcare", "patient", "treatment", "clinical"],
-                "urls": [
-                    ("https://www.who.int/", "World Health Organization"),
-                    ("https://www.nejm.org/", "New England Journal of Medicine"),
-                    ("https://www.nih.gov/", "National Institutes of Health"),
-                    ("https://jamanetwork.com/", "JAMA Network"),
-                ]
-            },
-            # Manufacturing/Industry
-            {
-                "keywords": ["manufacturing", "industry", "production", "factory", "industrial"],
-                "urls": [
-                    ("https://www.manufacturing.net/", "Manufacturing.net"),
-                    ("https://www.industryweek.com/", "IndustryWeek"),
-                    ("https://www.nist.gov/", "NIST"),
-                ]
-            },
-            # Marketing/Digital
-            {
-                "keywords": ["marketing", "advertising", "digital", "content", "email", "automation", "campaign"],
-                "urls": [
-                    ("https://hbr.org/", "Harvard Business Review"),
-                    ("https://www.statista.com/", "Statista"),
-                    ("https://techcrunch.com/", "TechCrunch"),
-                    ("https://www.pewresearch.org/", "Pew Research Center"),
-                ]
-            },
-            # General research/education
-            {
-                "keywords": ["research", "study", "report", "data", "statistics"],
-                "urls": [
-                    ("https://www.pewresearch.org/", "Pew Research Center"),
-                    ("https://www.census.gov/", "U.S. Census Bureau"),
-                    ("https://www.statista.com/", "Statista"),
-                    ("https://www.brookings.edu/", "Brookings"),
-                ]
-            }
-        ]
-        
-        # Find matching authority domains
-        for pattern in authority_patterns:
-            if any(keyword in query_lower for keyword in pattern["keywords"]):
-                logger.debug(f"Found matching pattern for keywords: {pattern['keywords']}")
-                
-                # Try each authority URL in the pattern
-                for base_url, source_name in pattern["urls"]:
-                    # Skip if it matches company or competitors
-                    if self._should_filter_url(base_url, company_url, competitors):
-                        continue
-                    
-                    # Quick validation check
-                    logger.debug(f"Checking authority fallback: {base_url}")
-                    is_valid, final_url = await self._check_url_status(base_url)
-                    
-                    if is_valid:
-                        fallback_title = f"{search_query[:60]} - {source_name}"
-                        result = (final_url, fallback_title)
-                        logger.info(f"✅ Authority fallback found: {final_url}")
-                        
-                        # Cache successful result
-                        _AUTHORITY_CACHE[cache_key] = (result, current_time)
-                        return result
-        
-        logger.warning(f"No authority fallback found for: {search_query[:50]}...")
-        
-        # Cache negative result
-        _AUTHORITY_CACHE[cache_key] = (None, current_time)
+        # Return None to indicate no fallback found
+        # This allows the original URL to be preserved even if invalid
         return None
 
     def _extract_title_from_response(self, response_text: str, url: str) -> Optional[str]:
@@ -890,12 +1140,13 @@ If no specific page found: {{"url": "", "verified": false}}"""
         url: str,
         company_url: str,
         competitors: List[str],
+        filter_company: bool = True,
     ) -> bool:
         """
         Check if URL should be filtered out.
         
         Filters:
-        - Company domain and subdomains
+        - Company domain and subdomains (if filter_company=True)
         - Competitor domains
         - Forbidden hosts (vertexaisearch.cloud.google.com, cloud.google.com)
         
@@ -903,6 +1154,7 @@ If no specific page found: {{"url": "", "verified": false}}"""
             url: URL to check
             company_url: Company URL
             competitors: List of competitor domains
+            filter_company: If False, allow company URLs (for citations)
             
         Returns:
             True if URL should be filtered out
@@ -915,20 +1167,39 @@ If no specific page found: {{"url": "", "verified": false}}"""
             if host in FORBIDDEN_HOSTS:
                 return True
             
-            # Check company domain
-            if company_url:
+            # Check company domain (only filter if filter_company=True)
+            # CRITICAL: Company URLs are valid for citations (case studies, customer pages)
+            if filter_company and company_url:
                 company_parsed = urlparse(company_url)
                 company_host = self._normalize_hostname(company_parsed.netloc)
                 if host == company_host or self._is_subdomain(host, company_host):
                     return True
             
-            # Check competitors
+            # Check competitors (handle both list of strings and comma-separated strings)
             for competitor in competitors:
-                comp_url = competitor if competitor.startswith("http") else f"https://{competitor}"
-                comp_parsed = urlparse(comp_url)
-                comp_host = self._normalize_hostname(comp_parsed.netloc)
-                if host == comp_host or self._is_subdomain(host, comp_host):
-                    return True
+                if not competitor or not isinstance(competitor, str):
+                    continue
+                
+                # Handle comma-separated competitor strings (e.g., "Rewardful, PartnerStack")
+                if "," in competitor:
+                    comp_list = [c.strip() for c in competitor.split(",") if c.strip()]
+                else:
+                    comp_list = [competitor.strip()]
+                
+                for comp in comp_list:
+                    if not comp:
+                        continue
+                    comp_url = comp if comp.startswith("http") else f"https://{comp}"
+                    try:
+                        comp_parsed = urlparse(comp_url)
+                        comp_host = self._normalize_hostname(comp_parsed.netloc)
+                        if host == comp_host or self._is_subdomain(host, comp_host):
+                            return True
+                    except Exception as e:
+                        logger.debug(f"Error parsing competitor URL '{comp}': {e}")
+                        # Fallback: simple string matching if URL parsing fails
+                        if comp.lower() in host.lower() or host.lower() in comp.lower():
+                            return True
             
             return False
             
@@ -1028,7 +1299,37 @@ If no specific page found: {{"url": "", "verified": false}}"""
                     language=language,
                 )
                 
-                # Create new citation object with validated data (don't mutate original)
+                # CRITICAL FIX: If URL is invalid (404), try harder to find alternative
+                # Don't accept 404 URLs - they break user trust
+                if not is_valid:
+                    logger.warning(f"⚠️  Citation [{citation.number}] URL is invalid (404): {final_url}")
+                    logger.info(f"   Attempting aggressive alternative search...")
+                    
+                    # Try one more time with a more aggressive search
+                    alternative = await self._find_alternative_url(
+                        citation.title, company_url, competitors, language
+                    )
+                    
+                    if alternative:
+                        # Validate the alternative URL
+                        alt_valid, alt_final = await self._check_url_status(alternative[0])
+                        if alt_valid:
+                            logger.info(f"   ✅ Found valid alternative: {alternative[0]}")
+                            citation.url = alternative[0]
+                            citation.title = alternative[1]
+                            return citation
+                        else:
+                            logger.warning(f"   ⚠️  Alternative also invalid: {alternative[0]}")
+                    
+                    # CRITICAL FIX: Reject invalid citations entirely instead of keeping 404 URLs
+                    # Invalid URLs break user trust and harm SEO
+                    logger.error(f"   ❌ No valid alternative found for citation [{citation.number}]")
+                    logger.error(f"   Rejecting invalid citation (404 URL): {final_url}")
+                    logger.error(f"   Citation [{citation.number}] will be removed from final output")
+                    # Return None to signal this citation should be filtered out
+                    return None
+                
+                # URL is valid - use it
                 citation.url = final_url
                 citation.title = final_title
                 return citation
@@ -1041,17 +1342,31 @@ If no specific page found: {{"url": "", "verified": false}}"""
         tasks = [validate_single_citation(citation) for citation in citations]
         validated = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Handle any exceptions and ensure we return valid Citation objects
+        # Handle any exceptions and filter out invalid citations (None values)
+        # CRITICAL: Keep original citation numbers to maintain sync with content markers [1], [2], etc.
+        # Invalid citations are filtered from HTML output, but markers in content remain as plain text
         result = []
+        invalid_count = 0
+        invalid_numbers = []
         for i, citation_or_error in enumerate(validated):
             if isinstance(citation_or_error, Exception):
                 logger.error(f"Citation [{citations[i].number}] validation failed: {citation_or_error}")
-                # Use original citation on error
-                result.append(citations[i])
+                # Reject citations that errored during validation
+                invalid_count += 1
+                invalid_numbers.append(citations[i].number)
+                logger.warning(f"   Rejecting citation [{citations[i].number}] due to validation error")
+            elif citation_or_error is None:
+                # Citation was rejected (invalid 404 URL with no alternative)
+                invalid_count += 1
+                invalid_numbers.append(citations[i].number)
             else:
                 result.append(citation_or_error)
         
-        logger.info(f"✅ Parallel validation complete: {len(result)} citations processed")
+        if invalid_count > 0:
+            logger.warning(f"⚠️  Filtered out {invalid_count} invalid citations: {invalid_numbers}")
+            logger.info(f"   Citation markers [{', '.join(map(str, invalid_numbers))}] in content will show as plain text (no links)")
+        
+        logger.info(f"✅ Parallel validation complete: {len(result)} valid citations (rejected {invalid_count} invalid)")
         return result
 
     async def close(self):

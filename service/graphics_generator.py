@@ -11,6 +11,7 @@ Uses:
 
 import os
 import re
+import io
 import time
 import base64
 import asyncio
@@ -74,8 +75,9 @@ class GraphicsGenerator:
         # Initialize Google Drive service
         self.drive_service = self._init_drive_service()
         
-        # Initialize component builder with theme
-        self.builder = GraphicsBuilder(theme=theme)
+        # Initialize component builder with theme (if provided)
+        # If theme is None, GraphicsBuilder will use default theme
+        self.builder = GraphicsBuilder(theme=theme) if theme else GraphicsBuilder()
         
         # Check for Playwright
         try:
@@ -202,9 +204,19 @@ class GraphicsGenerator:
         """
         # Check if using JSON config mode
         if isinstance(request.content, dict) and "config" in request.content:
-            config = request.content["config"]
+            config = request.content["config"].copy()
+            # Add dimensions to config if not present
+            if "dimensions" not in config:
+                config["dimensions"] = request.dimensions
+            
+            # Keep theme as dict - build_from_config expects dict, not Theme object
+            # Clean up any internal keys
+            if "theme" in config and isinstance(config["theme"], dict):
+                theme_dict = config["theme"]
+                config["theme"] = {k: v for k, v in theme_dict.items() if not k.startswith("_")}
+            
             # Build from JSON config using component system
-            return self.builder.build_from_config(config, request.dimensions)
+            return self.builder.build_from_config(config)
         
         # Legacy mode: use template-based generation
         if request.graphic_type == "headline":
@@ -243,12 +255,28 @@ class GraphicsGenerator:
           "components": [
             {"type": "badge", "content": {"text": "Case Study", "icon": "case-study"}},
             {"type": "headline", "content": {"text": "Amazing Results", "size": "large"}},
-            {"type": "logo_card", "content": {"client_name": "Client Co", "provider_name": "SCAILE"}}
+            # Logo cards removed - graphics should focus on content, not branding
           ]
         }
         """
-        # Build HTML from config
-        html_content = self.builder.build_from_config(config, dimensions)
+        # Create a copy of config to avoid mutating the original
+        config_copy = config.copy()
+        
+        # Add dimensions to config if not present
+        if "dimensions" not in config_copy:
+            config_copy["dimensions"] = dimensions
+        
+        # Keep theme as dict - build_from_config expects dict, not Theme object
+        # The openfigma library will handle Theme conversion internally if needed
+        # We just ensure it's a clean dict without internal keys
+        if "theme" in config_copy and isinstance(config_copy["theme"], dict):
+            theme_dict = config_copy["theme"]
+            # Remove any internal keys (keys starting with _)
+            config_copy["theme"] = {k: v for k, v in theme_dict.items() if not k.startswith("_")}
+        
+        # Build HTML from config (OpenFigma API: build_from_config(config))
+        # According to OpenFigma docs, build_from_config takes only config
+        html_content = self.builder.build_from_config(config_copy)
         
         # Convert to PNG
         if not self._playwright_available:
@@ -400,14 +428,7 @@ class GraphicsGenerator:
       color: #1a1a1a;
       letter-spacing: -0.02em;
     }}
-    .logo-icon {{ width: 32px; height: 32px; }}
-    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
-    .scaile-icon {{
-      width: 30px;
-      height: 30px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border-radius: 8px;
-    }}
+    /* Logo styles removed - graphics should focus on content, not branding */
   </style>
 </head>
 <body>
@@ -617,14 +638,7 @@ class GraphicsGenerator:
       color: #1a1a1a;
       letter-spacing: -0.02em;
     }}
-    .logo-icon {{ width: 32px; height: 32px; }}
-    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
-    .scaile-icon {{
-      width: 30px;
-      height: 30px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border-radius: 8px;
-    }}
+    /* Logo styles removed - graphics should focus on content, not branding */
   </style>
 </head>
 <body>
@@ -815,14 +829,7 @@ class GraphicsGenerator:
       color: #1a1a1a;
       letter-spacing: -0.02em;
     }}
-    .logo-icon {{ width: 32px; height: 32px; }}
-    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
-    .scaile-icon {{
-      width: 30px;
-      height: 30px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border-radius: 8px;
-    }}
+    /* Logo styles removed - graphics should focus on content, not branding */
   </style>
 </head>
 <body>
@@ -856,24 +863,8 @@ class GraphicsGenerator:
         button_text = content.get("button_text", "Get Started")
         badge_text = content.get("badge", "Get Started")
         company_name = request.company_data.get("name", "") if request.company_data else ""
-        show_logos = content.get("show_logos", True)
-        
+        # Logos disabled - graphics should focus on content, not branding
         logos_html = ""
-        if show_logos and company_name:
-            logos_html = f"""
-  <div class="logos-card">
-    <div class="logo">
-      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M4 6h16M4 12h16M4 18h10"/>
-      </svg>
-      {company_name.upper()}
-    </div>
-    <div class="logo-divider"></div>
-    <div class="logo">
-      <div class="scaile-icon"></div>
-      SCAILE
-    </div>
-  </div>"""
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -983,14 +974,7 @@ class GraphicsGenerator:
       color: #1a1a1a;
       letter-spacing: -0.02em;
     }}
-    .logo-icon {{ width: 32px; height: 32px; }}
-    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
-    .scaile-icon {{
-      width: 30px;
-      height: 30px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border-radius: 8px;
-    }}
+    /* Logo styles removed - graphics should focus on content, not branding */
   </style>
 </head>
 <body>
@@ -1020,24 +1004,8 @@ class GraphicsGenerator:
         items = content.get("items", [])
         badge_text = content.get("badge", "Process")
         company_name = request.company_data.get("name", "") if request.company_data else ""
-        show_logos = content.get("show_logos", True)
-        
+        # Logos disabled - graphics should focus on content, not branding
         logos_html = ""
-        if show_logos and company_name:
-            logos_html = f"""
-  <div class="logos-card">
-    <div class="logo">
-      <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M4 6h16M4 12h16M4 18h10"/>
-      </svg>
-      {company_name.upper()}
-    </div>
-    <div class="logo-divider"></div>
-    <div class="logo">
-      <div class="scaile-icon"></div>
-      SCAILE
-    </div>
-  </div>"""
         
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1160,14 +1128,7 @@ class GraphicsGenerator:
       color: #1a1a1a;
       letter-spacing: -0.02em;
     }}
-    .logo-icon {{ width: 32px; height: 32px; }}
-    .logo-divider {{ width: 1px; height: 36px; background: #d0d0d0; }}
-    .scaile-icon {{
-      width: 30px;
-      height: 30px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border-radius: 8px;
-    }}
+    /* Logo styles removed - graphics should focus on content, not branding */
   </style>
 </head>
 <body>
@@ -1195,12 +1156,27 @@ class GraphicsGenerator:
         """Convert HTML to PNG using Playwright."""
         from playwright.async_api import async_playwright
         
+        # Try to import PIL for image cropping (optional)
+        try:
+            from PIL import Image
+            PIL_AVAILABLE = True
+        except ImportError:
+            PIL_AVAILABLE = False
+            logger.warning("PIL/Pillow not available - will use full_page screenshot without cropping")
+        
         async with async_playwright() as p:
             browser = await p.chromium.launch()
-            page = await browser.new_page(viewport={"width": dimensions[0], "height": dimensions[1]})
+            
+            # openfigma generates HTML with hardcoded 1920x1080 dimensions
+            # We'll render at that size to capture all content, then scale down
+            openfigma_default_width = 1920
+            openfigma_default_height = 1080
+            
+            # Set viewport to openfigma's default size to capture full content
+            page = await browser.new_page(viewport={"width": openfigma_default_width, "height": openfigma_default_height})
             
             # Write HTML to temp file
-            with NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+            with NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
                 f.write(html_content)
                 temp_path = f.name
             
@@ -1209,8 +1185,61 @@ class GraphicsGenerator:
                 await page.goto(f"file://{temp_path}")
                 await page.wait_for_load_state("networkidle")
                 
-                # Take screenshot
-                screenshot_bytes = await page.screenshot(full_page=False, type="png")
+                # Wait for rendering to complete
+                await page.wait_for_timeout(1000)
+                
+                # Capture full page at openfigma's default size (1920x1080) to get all content
+                screenshot_bytes = await page.screenshot(
+                    full_page=True,
+                    type="png"
+                )
+                
+                # Scale down to desired dimensions using PIL
+                if PIL_AVAILABLE:
+                    img = Image.open(io.BytesIO(screenshot_bytes))
+                    actual_size = img.size
+                    logger.debug(f"Captured at openfigma default size: {actual_size}, scaling to target: {dimensions}")
+                    
+                    # UNIVERSAL ASPECT RATIO HANDLING:
+                    # This logic works for ANY aspect ratio (square, landscape, portrait, etc.)
+                    # Scale proportionally to fit within target dimensions (maintains aspect ratio)
+                    # Then crop to exact dimensions if aspect ratios differ
+                    scale_w = dimensions[0] / actual_size[0]
+                    scale_h = dimensions[1] / actual_size[1]
+                    scale = min(scale_w, scale_h)  # Use smaller scale to ensure content fits
+                    
+                    # Resize maintaining aspect ratio
+                    new_width = int(actual_size[0] * scale)
+                    new_height = int(actual_size[1] * scale)
+                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    
+                    # Crop to exact dimensions (centered) - handles any aspect ratio mismatch
+                    if new_width != dimensions[0] or new_height != dimensions[1]:
+                        left = (new_width - dimensions[0]) // 2
+                        top = (new_height - dimensions[1]) // 2
+                        right = left + dimensions[0]
+                        bottom = top + dimensions[1]
+                        img = img.crop((max(0, left), max(0, top), min(new_width, right), min(new_height, bottom)))
+                    
+                    # If image is smaller than target, pad it (shouldn't happen, but handle it)
+                    if img.size[0] < dimensions[0] or img.size[1] < dimensions[1]:
+                        new_img = Image.new('RGB', dimensions, color='white')
+                        new_img.paste(img, ((dimensions[0] - img.size[0]) // 2, (dimensions[1] - img.size[1]) // 2))
+                        img = new_img
+                    
+                    buffer = io.BytesIO()
+                    img.save(buffer, format="PNG")
+                    screenshot_bytes = buffer.getvalue()
+                    logger.debug(f"Scaled and cropped to exact dimensions: {dimensions}")
+                else:
+                    # Without PIL, fall back to viewport screenshot with clip
+                    logger.warning("PIL not available - using viewport screenshot (content may be cut)")
+                    await page.set_viewport_size({"width": dimensions[0], "height": dimensions[1]})
+                    screenshot_bytes = await page.screenshot(
+                        full_page=False,
+                        type="png",
+                        clip={"x": 0, "y": 0, "width": dimensions[0], "height": dimensions[1]}
+                    )
                 
                 return screenshot_bytes
             finally:

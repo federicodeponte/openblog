@@ -48,10 +48,42 @@ class Citation(BaseModel):
     @classmethod
     def validate_url_format(cls, v):
         """Validate URL format."""
-        if not v.startswith(("http://", "https://", "ftp://")):
+        # CRITICAL FIX: Reject relative URLs and malformed URLs
+        if not v.startswith(("http://", "https://")):
+            if v.startswith("/"):
+                # Relative URL - reject it
+                logger.error(f"Rejecting relative URL: {v}")
+                raise ValueError(f"Relative URLs are not allowed: {v}")
             logger.warning(f"URL missing protocol: {v}")
-            # Prepend https:// if missing
-            v = f"https://{v}"
+            # Only prepend https:// if it looks like a domain (has a dot)
+            if "." in v and not v.startswith("/"):
+                v = f"https://{v}"
+            else:
+                logger.error(f"Invalid URL format: {v}")
+                raise ValueError(f"Invalid URL format: {v}")
+        
+        # CRITICAL FIX: Validate URL has proper domain structure
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(v)
+            if not parsed.netloc:
+                logger.error(f"URL missing domain: {v}")
+                raise ValueError(f"URL missing domain: {v}")
+            
+            # Check domain has TLD (at least one dot in netloc)
+            domain = parsed.netloc.lower()
+            if "." not in domain and domain not in ['localhost']:
+                # Check if it's an IP address
+                try:
+                    import ipaddress
+                    ipaddress.ip_address(domain)
+                except ValueError:
+                    logger.error(f"URL missing TLD: {v}")
+                    raise ValueError(f"URL missing TLD (invalid domain): {v}")
+        except Exception as e:
+            logger.error(f"URL validation error for {v}: {e}")
+            raise ValueError(f"Invalid URL format: {v}")
+        
         return v
 
     def to_html(self) -> str:

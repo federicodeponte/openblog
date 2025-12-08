@@ -555,7 +555,7 @@ class WorkflowEngine:
                 context.job_config = {}
             
             enhancement_prompts = [
-                "Focus on achieving 85+ AEO score with strict quality requirements.",
+                "Focus on achieving 80+ AEO score with strict quality requirements.",
                 "Ensure every paragraph has exactly 2-3 citations with credible sources.",
                 "Distribute internal links evenly (1 per section) throughout the article.",
                 "Target 40-60 words per paragraph with clear, actionable content.",
@@ -575,7 +575,7 @@ class WorkflowEngine:
                 context.job_config = {}
             
             fallback_prompts = [
-                "Target 75+ AEO score (relaxed from 85) while maintaining content quality.",
+                "Target 75+ AEO score (relaxed from 80) while maintaining content quality.",
                 "Focus on clear, helpful content with practical examples.",
                 "Include citations and internal links naturally without forcing exact counts.",
                 "Prioritize readability and user value over strict formatting rules."

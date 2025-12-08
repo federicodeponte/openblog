@@ -658,13 +658,19 @@ class JobManager:
     ) -> None:
         """Update Supabase article after job completion."""
         try:
+            import os
             client_info = config.client_info or {}
             article_id = client_info.get('article_id')
-            supabase_url = client_info.get('supabase_url')
-            supabase_service_key = client_info.get('supabase_service_key')
+            # Use client_info if provided, otherwise fall back to environment variables
+            supabase_url = client_info.get('supabase_url') or os.getenv("SUPABASE_URL")
+            supabase_service_key = client_info.get('supabase_service_key') or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
             
-            if not all([article_id, supabase_url, supabase_service_key]):
-                logger.warning(f"[{job_id}] Missing Supabase credentials in client_info")
+            if not article_id:
+                logger.warning(f"[{job_id}] Missing article_id in client_info")
+                return
+            
+            if not supabase_url or not supabase_service_key:
+                logger.warning(f"[{job_id}] Missing Supabase credentials (not in client_info or environment variables)")
                 return
             
             from supabase import create_client

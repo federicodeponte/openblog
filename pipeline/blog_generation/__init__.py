@@ -12,6 +12,7 @@ from .stage_07_metadata import MetadataStage
 from .stage_08_faq_paa import FAQPAAStage
 from .stage_09_image import ImageStage
 from .stage_10_cleanup import CleanupStage
+from .stage_10_ai_cleanup import AICleanupStage
 from .stage_11_storage import StorageStage
 from .stage_12_review_iteration import ReviewIterationStage
 
@@ -27,6 +28,7 @@ __all__ = [
     "FAQPAAStage",
     "ImageStage",
     "CleanupStage",
+    "AICleanupStage",
     "StorageStage",
     "ReviewIterationStage",
 ]

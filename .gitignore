@@ -54,5 +54,31 @@ Thumbs.db
 # Output
 output/
 *.html
+
+# Test outputs and artifacts
+test_*.png
+test_*.html
+test_*.jpg
+test_*.jpeg
+debug_*.html
+debug_*.png
+*_test_output/
+*_test_results/
+trace_*/
+
+# Credentials and secrets
 *.json
+*-credentials.json
+*-key.json
+*-service-account.json
+*-private-key.json
+gen-lang-client-*.json
+**/credentials/**
+**/secrets/**
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+content_fingerprints.db
 

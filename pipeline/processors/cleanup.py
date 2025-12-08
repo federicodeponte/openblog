@@ -97,12 +97,21 @@ class HTMLCleaner:
         # Fix double closing tags (additional check, handle whitespace)
         html = re.sub(r'</p>\s*</p>', '</p>', html)
         
-        # Fix <strong> tags without proper <p> wrapping
-        # Pattern: </p><strong>...</strong></p> or <strong>...</strong> without <p>
-        html = re.sub(r'</p><strong>', '<p><strong>', html)
-        html = re.sub(r'</strong></p>', '</strong></p>', html)
-        # Fix standalone <strong> tags (wrap in <p> if not already wrapped)
-        html = re.sub(r'(?<!<p>)<strong>([^<]+)</strong>(?!</p>)', r'<p><strong>\1</strong></p>', html)
+        # CRITICAL FIX: Merge <strong> tags that appear right after </p> back into previous paragraph
+        # This fixes the issue where keywords are wrapped in <strong> but placed in new <p> tags
+        # Example: "<p>text </p><p><strong>keyword</strong></p>" → "<p>text <strong>keyword</strong></p>"
+        # Pattern 1: </p><p><strong>keyword</strong></p> → merge into previous paragraph
+        # This pattern finds </p> followed by <p><strong>keyword</strong></p> and merges them
+        html = re.sub(r'</p>\s*<p>\s*<strong>([^<]+)</strong>\s*</p>', r' <strong>\1</strong></p>', html)
+        # Pattern 2: </p><strong>keyword</strong> (not followed by </p>) → merge into previous paragraph
+        html = re.sub(r'</p>\s*<strong>([^<]+)</strong>(?!</p>)', r' <strong>\1</strong></p>', html)
+        # Pattern 3: </p><strong>keyword</strong></p> → merge into previous paragraph
+        html = re.sub(r'</p>\s*<strong>([^<]+)</strong>\s*</p>', r' <strong>\1</strong></p>', html)
+        
+        # Fix <strong> tags without proper <p> wrapping (only for truly standalone tags)
+        # Pattern: <strong>...</strong> without <p> and NOT immediately after </p>
+        # This only wraps tags that are truly orphaned, not ones that should be merged
+        html = re.sub(r'(?<!</p>)(?<!<p>)<strong>([^<]+)</strong>(?!</p>)', r'<p><strong>\1</strong></p>', html)
         
         # Fix common unclosed tags
         # NOTE: Skip the <p> tag fix pattern as it can create double closing tags

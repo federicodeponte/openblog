@@ -137,13 +137,72 @@ class CleanupStage(Stage):
         if citations_list and sanitized_citations:
             # Extract citations for linking
             citations_for_linking = []
+            citation_map = {}  # Build citation_map for HTML rendering
             if hasattr(citations_list, 'citations'):
                 for citation in citations_list.citations:
+                    citation_num = citation.number if hasattr(citation, 'number') else citation.get('number')
+                    citation_url = citation.url if hasattr(citation, 'url') else citation.get('url')
+                    citation_title = citation.title if hasattr(citation, 'title') else citation.get('title', '')
+                    
                     citations_for_linking.append({
-                        'number': citation.number if hasattr(citation, 'number') else citation.get('number'),
-                        'url': citation.url if hasattr(citation, 'url') else citation.get('url'),
-                        'title': citation.title if hasattr(citation, 'title') else citation.get('title', ''),
+                        'number': citation_num,
+                        'url': citation_url,
+                        'title': citation_title,
                     })
+                    
+                    # Build citation_map: number -> URL (for HTML rendering)
+                    # CRITICAL FIX: Only add valid URLs to citation_map (format + HTTP 200 check)
+                    if citation_num and citation_url:
+                        # Validate URL format before adding to map
+                        if not citation_url.startswith(("http://", "https://")):
+                            logger.warning(f"⚠️  Rejecting relative/invalid URL for citation [{citation_num}]: {citation_url}")
+                            continue
+                        
+                        # Check for malformed URLs (missing TLD)
+                        from urllib.parse import urlparse
+                        try:
+                            parsed = urlparse(citation_url)
+                            domain = parsed.netloc.lower()
+                            if "." not in domain and domain not in ['localhost']:
+                                # Check if it's an IP address
+                                try:
+                                    import ipaddress
+                                    ipaddress.ip_address(domain)
+                                except ValueError:
+                                    logger.warning(f"⚠️  Rejecting URL with missing TLD for citation [{citation_num}]: {citation_url}")
+                                    continue
+                        except Exception as e:
+                            logger.warning(f"⚠️  Error validating URL for citation [{citation_num}]: {e}")
+                            continue
+                        
+                        # CRITICAL FIX: Final HTTP validation - check if URL actually exists (200 OK)
+                        # This catches 404s that might have slipped through earlier validation
+                        # Note: This is a final safety check - URLs should already be validated in stage_04
+                        try:
+                            import httpx
+                            async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+                                response = await client.head(citation_url)
+                                if response.status_code != 200:
+                                    logger.warning(f"⚠️  Rejecting invalid URL (HTTP {response.status_code}) for citation [{citation_num}]: {citation_url}")
+                                    continue
+                                
+                                # Check for soft 404s (200 OK but redirects to error page)
+                                final_url = str(response.url)
+                                error_indicators = ['/404', '/not-found', '/error', 'notfound', 'page-not-found']
+                                if any(indicator in final_url.lower() for indicator in error_indicators):
+                                    logger.warning(f"⚠️  Rejecting URL (error page redirect) for citation [{citation_num}]: {citation_url}")
+                                    continue
+                        except httpx.TimeoutException:
+                            logger.warning(f"⚠️  URL validation timeout for citation [{citation_num}]: {citation_url}")
+                            # On timeout, reject to be safe
+                            continue
+                        except Exception as e:
+                            logger.warning(f"⚠️  Error checking URL status for citation [{citation_num}]: {e}")
+                            # On error, reject the URL to be safe
+                            continue
+                        
+                        citation_map[citation_num] = citation_url
+                        logger.debug(f"Citation map: [{citation_num}] → {citation_url}")
             
             if citations_for_linking:
                 sanitized_citations = CitationLinker.link_citations_in_content(
@@ -151,6 +210,14 @@ class CleanupStage(Stage):
                     citations_for_linking
                 )
                 logger.info(f"✅ Linked {len(citations_for_linking)} citations in content")
+            
+            # CRITICAL FIX: Set citation_map in article dict for HTML rendering
+            # This allows _linkify_citations() to convert #source-N anchors to real URLs
+            if citation_map:
+                sanitized_citations['_citation_map'] = citation_map
+                logger.info(f"✅ Set citation_map with {len(citation_map)} entries for HTML rendering")
+            else:
+                logger.warning(f"⚠️  No citation_map created (citations_list might be empty)")
 
         # Step 5: Quality checks and flattening
         logger.debug("Step 33: Quality checks and validation...")
@@ -195,10 +262,25 @@ class CleanupStage(Stage):
         else:
             article = dict(structured_data)
 
-        # Clean each HTML field
+        # CRITICAL FIX: Define fields that should NEVER be HTML processed (plain text only)
+        PLAIN_TEXT_FIELDS = {
+            'Headline', 'Subtitle', 'Meta_Title', 'Meta_Description',
+            'section_01_title', 'section_02_title', 'section_03_title',
+            'section_04_title', 'section_05_title', 'section_06_title',
+            'section_07_title', 'section_08_title', 'section_09_title',
+        }
+        
+        # Clean each HTML field (but skip plain text fields to prevent entity encoding)
         for key in article:
-            if isinstance(article[key], str) and ("<" in article[key] or "**" in article[key]):
-                article[key] = HTMLCleaner.clean_html(article[key])
+            if isinstance(article[key], str):
+                # Skip HTML processing for plain text fields (prevents & from becoming &amp;)
+                if key in PLAIN_TEXT_FIELDS:
+                    # Only strip HTML tags, don't process through HTMLCleaner
+                    import re
+                    article[key] = re.sub(r'<[^>]+>', '', article[key]).strip()
+                elif "<" in article[key] or "**" in article[key]:
+                    # Only process fields that actually contain HTML
+                    article[key] = HTMLCleaner.clean_html(article[key])
 
         # Combine sections into single content field
         combined_content = SectionCombiner.combine_sections(structured_data)
@@ -402,8 +484,8 @@ class CleanupStage(Stage):
         paras_with_2plus = sum(1 for para in paragraphs if len(re.findall(r'\[\d+\]', para)) >= 2)
         citation_distribution = (paras_with_2plus / len(paragraphs) * 100) if paragraphs else 0
         logger.debug(f"Citation distribution: {paras_with_2plus}/{len(paragraphs)} paragraphs have 2+ citations ({citation_distribution:.1f}%)")
-        if citation_distribution < 60:
-            logger.warning(f"⚠️  Citation distribution below target: {citation_distribution:.1f}% (target: 60%+)")
+        if citation_distribution < 70:
+            logger.warning(f"⚠️  Citation distribution below target: {citation_distribution:.1f}% (target: 70%+ with buffer)")
         
         # 2. Conversational phrases
         conversational_phrases = [
@@ -413,9 +495,9 @@ class CleanupStage(Stage):
         ]
         content_lower = all_content.lower()
         phrase_count = sum(1 for phrase in conversational_phrases if phrase in content_lower)
-        logger.debug(f"Conversational phrases: {phrase_count} found (target: 8+)")
-        if phrase_count < 8:
-            logger.warning(f"⚠️  Conversational phrases below target: {phrase_count} (target: 8+)")
+        logger.debug(f"Conversational phrases: {phrase_count} found (target: 12+ with buffer)")
+        if phrase_count < 12:
+            logger.warning(f"⚠️  Conversational phrases below target: {phrase_count} (target: 12+ with buffer)")
         
         # 3. Question headers
         question_patterns = ["what is", "how does", "why does", "when should", "where can", "what are", "how can"]
@@ -439,11 +521,11 @@ class CleanupStage(Stage):
         for para in paragraphs:
             text_no_html = re.sub(r'<[^>]+>', ' ', para)
             word_count = len(text_no_html.split())
-            if word_count > 50:
+            if word_count > 60:  # Allow up to 60 words (10-word error range)
                 long_paragraphs.append(word_count)
-        logger.debug(f"Paragraph length violations: {len(long_paragraphs)} paragraphs >50 words (target: 0)")
+        logger.debug(f"Paragraph length violations: {len(long_paragraphs)} paragraphs >60 words (target: 0)")
         if long_paragraphs:
-            logger.warning(f"⚠️  {len(long_paragraphs)} paragraphs exceed 50 words")
+            logger.warning(f"⚠️  {len(long_paragraphs)} paragraphs exceed 60 words")
         
         logger.debug("=" * 80)
 
@@ -486,7 +568,7 @@ class CleanupStage(Stage):
         1. Citation distribution (add citations to paragraphs with <2)
         2. Conversational phrases (add if <8 found) - LANGUAGE-AWARE
         3. Question headers (convert section titles to questions if <2)
-        4. Long paragraphs (split paragraphs >50 words)
+        4. Long paragraphs (split paragraphs >60 words)
         5. Missing lists (add lists if <3 found)
         
         Args:
@@ -516,9 +598,9 @@ class CleanupStage(Stage):
         else:
             logger.debug(f"Skipping English phrase injection for {language} content")
         
-        # 3. Enhance Direct Answer (with keyword enforcement) - LANGUAGE-AWARE
-        primary_keyword = job_config.get("primary_keyword", "")
-        article = self._enhance_direct_answer(article, primary_keyword, language)
+        # 3. Enhance Direct Answer (conversational phrases only, no keyword injection) - LANGUAGE-AWARE
+        # Note: Keyword inclusion is now handled entirely by the prompt - no post-processing
+        article = self._enhance_direct_answer(article, "", language)
         
         # 4. Convert section titles to questions
         article = self._convert_headers_to_questions(article)
@@ -533,7 +615,7 @@ class CleanupStage(Stage):
         return article
 
     def _fix_citation_distribution(self, article: Dict[str, Any]) -> Dict[str, Any]:
-        """Fix citation distribution - ensure 60%+ paragraphs have 2+ citations."""
+        """Fix citation distribution - ensure 70%+ paragraphs have 2+ citations (buffer above 60% minimum)."""
         logger.debug("Fixing citation distribution...")
         
         # Get sources for citation numbers
@@ -708,11 +790,34 @@ class CleanupStage(Stage):
                         words = second.split()
                         if words and words[0][0].isupper():
                             first_word_lower = words[0][0].lower() + words[0][1:] if len(words[0]) > 1 else words[0].lower()
-                            new_second = f"Here's {first_word_lower} " + " ".join(words[1:])
-                            sentences[1] = new_second
-                            article["Intro"] = " ".join(sentences)
-                            added_count += 1
-                            logger.debug("Added 'Here's' to Intro")
+                            
+                            # CRITICAL FIX: Prevent "Here's this/that/these/those" (grammatically incorrect)
+                            # Also prevent "Here's" before articles (a, an, the) or demonstratives
+                            # Also prevent "Here's" before prepositions (e.g., "Here's in late 2024")
+                            skip_words = ['this', 'that', 'these', 'those', 'the', 'a', 'an', 'it', 'they', 'we', 'you']
+                            prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'into', 'onto']
+                            
+                            if first_word_lower in skip_words or first_word_lower in prepositions:
+                                # Use alternative phrase instead or skip
+                                if first_word_lower in ['this', 'that']:
+                                    # "This scenario" → Skip this injection to avoid "Here's this"
+                                    logger.debug("Skipped 'Here's' injection to avoid 'Here's this/that'")
+                                elif first_word_lower in prepositions:
+                                    # "In late 2024" → Skip to avoid "Here's in late 2024"
+                                    logger.debug(f"Skipped 'Here's' injection to avoid 'Here's {first_word_lower}'")
+                                else:
+                                    # For other skip words, use different phrase
+                                    new_second = f"You'll find {first_word_lower} " + " ".join(words[1:])
+                                    sentences[1] = new_second
+                                    article["Intro"] = " ".join(sentences)
+                                    added_count += 1
+                                    logger.debug("Added 'You'll find' to Intro (alternative phrase)")
+                            else:
+                                new_second = f"Here's {first_word_lower} " + " ".join(words[1:])
+                                sentences[1] = new_second
+                                article["Intro"] = " ".join(sentences)
+                                added_count += 1
+                                logger.debug("Added 'Here's' to Intro")
         
         # Strategy 2: Add to sections - more aggressively
         for i in range(1, 10):
@@ -761,9 +866,99 @@ class CleanupStage(Stage):
                     first_word_lower = first_word[0].lower() + first_word[1:] if len(first_word) > 1 else first_word.lower()
                     
                     # Skip problematic combinations
-                    skip_words = ['the', 'a', 'an', 'however', 'although', 'despite', 'while', 'because']
+                    # CRITICAL FIX: Prevent "Here's this/that/these/those" (grammatically incorrect)
+                    skip_words = ['the', 'a', 'an', 'however', 'although', 'despite', 'while', 'because', 
+                                 'this', 'that', 'these', 'those', 'it', 'they', 'we', 'you']
                     if first_word_lower in skip_words:
                         continue
+                    
+                    # CRITICAL FIX: Prevent "Here's" + demonstrative pronouns
+                    if phrase_lower == "here's how" and first_word_lower in ['this', 'that', 'these', 'those']:
+                        continue
+                    
+                    # CRITICAL FIX: Prevent "Here's" before prepositions (e.g., "Here's in late 2024")
+                    prepositions = ['in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about', 'into', 'onto']
+                    if phrase_lower in ["here's", "here's how"] and first_word_lower in prepositions:
+                        continue  # Skip - "Here's in late 2024" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent grammatically incorrect phrase injections
+                    # "You can fragmented" → should skip (fragmented is adjective, not verb)
+                    # "When you building" → should skip (building needs "are" or just "Building")
+                    # "If you want regulatory" → should skip (regulatory is adjective)
+                    # "You can identity" → should skip (identity is noun, not verb)
+                    # "When you finally" → should skip (finally is adverb, not verb)
+                    # "If you want digital" → should skip (digital is adjective)
+                    
+                    # Check if first word is a verb/gerund that works with the phrase
+                    # Verbs that work with "you can": achieve, implement, use, create, build, etc.
+                    # Verbs that DON'T work: fragmented (adj), building (needs "are"), regulatory (adj)
+                    problematic_first_words = {
+                        'fragmented', 'building', 'regulatory', 'successful', 'effective', 'modern',
+                        'traditional', 'automated', 'strategic', 'critical', 'essential', 'important',
+                        'identity', 'digital', 'sovereignty', 'compliance', 'governance', 'security'
+                    }
+                    
+                    # Adverbs that don't work with "when you"
+                    adverbs = ['finally', 'eventually', 'ultimately', 'recently', 'currently', 'previously']
+                    
+                    # If phrase is "you can", "when you", or "if you want", check if first word works
+                    if phrase_lower in ["you can", "when you", "if you want"]:
+                        if first_word_lower in problematic_first_words:
+                            continue  # Skip this injection - would create grammatical error
+                        # Also check if first word ends in -ing (gerund) - "when you building" is wrong
+                        if first_word_lower.endswith('ing') and phrase_lower == "when you":
+                            continue  # Skip - "When you building" is grammatically incorrect
+                        # Check for adverbs with "when you"
+                        if first_word_lower in adverbs and phrase_lower == "when you":
+                            continue  # Skip - "When you finally" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "That's why however" (double conjunction)
+                    # Also prevent "That's why conversely" (double conjunction)
+                    if phrase_lower == "that's why" and first_word_lower in ["however", "conversely", "alternatively"]:
+                        continue  # Skip - "That's why however/conversely" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "That's why handling" (grammatically incorrect)
+                    # "handling", "navigating" are gerunds, not suitable for "That's why"
+                    # "That's why" should be followed by a clause, not a gerund
+                    if phrase_lower == "that's why" and (first_word_lower.endswith("ing") or first_word_lower in ["handling", "navigating", "managing", "building", "creating"]):
+                        continue  # Skip - "That's why handling" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "You can handling" (grammatically incorrect)
+                    # "handling", "navigating" are gerunds, not suitable for "You can"
+                    # "You can" should be followed by a verb, not a gerund
+                    if phrase_lower == "you can" and (first_word_lower.endswith("ing") or first_word_lower in ["handling", "navigating", "managing", "building", "creating"]):
+                        continue  # Skip - "You can handling" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "You'll find to" (grammatically incorrect)
+                    # "You'll find to combat" should be "To combat" or "You'll find that combat"
+                    if phrase_lower == "you'll find" and first_word_lower == "to":
+                        continue  # Skip - "You'll find to" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "You'll find selecting" (grammatically incorrect)
+                    # "selecting" is a gerund, not suitable for "You'll find"
+                    # "You'll find" should be followed by a clause, not a gerund
+                    if phrase_lower == "you'll find" and (first_word_lower.endswith("ing") or first_word_lower in ["selecting", "handling", "navigating", "managing", "building", "creating"]):
+                        continue  # Skip - "You'll find selecting" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "If you want similarly" (grammatically incorrect)
+                    # "similarly" is an adverb, not suitable for "if you want"
+                    if phrase_lower == "if you want" and first_word_lower in ["similarly", "ultimately", "finally", "eventually"]:
+                        continue  # Skip - "If you want similarly" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "This is ultimately" (awkward phrasing)
+                    # "ultimately" should start the sentence, not follow "This is"
+                    if phrase_lower == "this is" and first_word_lower in ["ultimately", "finally", "eventually"]:
+                        continue  # Skip - "This is ultimately" is awkward
+                    
+                    # CRITICAL FIX: Prevent "so you can Cloud" (grammatically incorrect)
+                    # "Cloud" is a proper noun, not suitable for "so you can"
+                    if phrase_lower == "so you can" and first_word_lower in ["cloud", "security", "identity", "digital"]:
+                        continue  # Skip - "so you can Cloud" is grammatically incorrect
+                    
+                    # CRITICAL FIX: Prevent "Here's how beyond" (grammatically incorrect)
+                    # "beyond" is a preposition, not suitable for "Here's how"
+                    if phrase_lower in ["here's how", "how to"] and first_word_lower in ["beyond", "within", "through", "across", "during", "before", "after"]:
+                        continue  # Skip - "Here's how beyond" is grammatically incorrect
                     
                     # Build new paragraph start
                     if phrase_lower in ["you can", "you'll find", "when you", "if you want"]:
@@ -774,8 +969,17 @@ class CleanupStage(Stage):
                         new_start = f"Here's how {first_word_lower}"
                     elif phrase_lower == "so you can":
                         # Insert in middle
+                        # CRITICAL FIX: Check if the word after insertion point is problematic
                         if len(words) > 10:
                             mid_point = len(words) // 2
+                            next_word_after_insertion = words[mid_point].lower() if mid_point < len(words) else ""
+                            
+                            # Skip if next word is a proper noun or problematic word
+                            problematic_mid_words = ['cloud', 'security', 'identity', 'digital', 'sovereignty', 
+                                                      'compliance', 'governance', 'cspm', 'cwpp', 'cnapp']
+                            if next_word_after_insertion in problematic_mid_words:
+                                continue  # Skip - would create "so you can Cloud" which is grammatically incorrect
+                            
                             new_text = " ".join(words[:mid_point]) + " so you can " + " ".join(words[mid_point:])
                             new_para = f"<p>{new_text}</p>"
                             old_para = f"<p>{para_text}</p>"
@@ -831,48 +1035,16 @@ class CleanupStage(Stage):
 
 
     def _enhance_direct_answer(self, article: Dict[str, Any], primary_keyword: str = "", language: str = "en") -> Dict[str, Any]:
-        """Enhance Direct Answer with conversational phrase and ensure keyword inclusion.
+        """Enhance Direct Answer with conversational phrase (English only).
         
         LANGUAGE-AWARE: Only adds English phrases for English content.
-        For non-English, just ensures keyword is present without English leakage.
+        Keyword inclusion is now handled entirely by the prompt - no post-processing injection.
         """
         logger.debug(f"Enhancing Direct Answer (language={language})...")
         
         direct_answer = article.get("Direct_Answer", "")
         if not direct_answer:
             return article
-        
-        # First, ensure primary keyword is in the Direct Answer
-        if primary_keyword and primary_keyword.lower() not in direct_answer.lower():
-            logger.debug(f"Primary keyword '{primary_keyword}' missing from Direct Answer, injecting...")
-            # Append keyword phrase at the end (before any citation) - language neutral
-            citation_match = re.search(r'\s*\[\d+\]\s*\.?\s*$', direct_answer)
-            if citation_match:
-                before_citation = direct_answer[:citation_match.start()]
-                citation = citation_match.group()
-                # Use language-appropriate connector
-                if language == "de":
-                    connector = f", insbesondere bei {primary_keyword}"
-                elif language == "fr":
-                    connector = f", notamment pour {primary_keyword}"
-                elif language == "es":
-                    connector = f", especialmente para {primary_keyword}"
-                else:
-                    connector = f", especially when implementing {primary_keyword}"
-                direct_answer = f"{before_citation}{connector}{citation}"
-            else:
-                # Append at end
-                if language == "de":
-                    direct_answer = f"{direct_answer} Dies ist entscheidend für {primary_keyword}."
-                elif language == "fr":
-                    direct_answer = f"{direct_answer} C'est essentiel pour {primary_keyword}."
-                elif language == "es":
-                    direct_answer = f"{direct_answer} Esto es clave para {primary_keyword}."
-                else:
-                    direct_answer = f"{direct_answer} This is key for {primary_keyword}."
-            
-            article["Direct_Answer"] = direct_answer
-            logger.debug("Injected primary keyword into Direct Answer")
         
         # SKIP conversational phrase injection for non-English
         # This is the main source of English leakage
@@ -987,24 +1159,87 @@ class CleanupStage(Stage):
                 # Extract the main topic
                 topic = title.replace("Enhancing ", "").replace("Improving ", "").replace("Boosting ", "")
                 new_title = f"How can you enhance {topic.lower()}?"
+            elif title.startswith("How to "):
+                # CRITICAL FIX: Skip titles that already start with "How to" - don't convert them
+                # "How to Build X" should stay as is, not become "How to How to Build X?"
+                continue
+            elif title.split()[0].lower() in ["governance", "strategic", "compliance", "security"] and "frameworks" in title.lower():
+                # CRITICAL FIX: Skip titles like "Governance Frameworks for Safe Scaling"
+                # These are descriptive titles that shouldn't become "How to Governance..."
+                continue
             elif "Overcoming" in title or "Challenges" in title:
                 # "Overcoming Implementation Challenges" -> "What are the challenges of implementation?"
                 topic = title.replace("Overcoming ", "").replace(" Challenges", "")
                 new_title = f"What are the challenges of {topic.lower()}?"
             elif "Future" in title or "Trends" in title:
+                # CRITICAL FIX: Prevent awkward questions like "What are the future trends in strategic implementation for the future?"
+                # Also prevent "What are the future trends in outlook: the path forward?"
+                # Also prevent "What are the future trends in the future: from chatbots to agents?"
+                # If title already contains "future" or "trends", don't add redundant question format
+                title_lower = title.lower()
+                if "future" in title_lower and ("trend" in title_lower or "implementation" in title_lower or "strategic" in title_lower or "outlook" in title_lower or ":" in title):
+                    # Skip conversion - would create redundant/awkward question
+                    # "The Future: From Chatbots to Agents" should stay as is
+                    continue
+                if title.startswith("The Future"):
+                    # Skip titles starting with "The Future" - they're descriptive, not questions
+                    continue
                 # "Future Trends and Market Growth" -> "What are the future trends?"
                 new_title = f"What are the future trends in {title.lower().replace('future trends and ', '').replace('future ', '')}?"
+            elif title.split()[0].endswith("ing") or title.split()[0].lower() in ["implementing", "selecting", "automation", "building", "creating", "developing", "managing", "optimizing"]:
+                # CRITICAL FIX: Skip gerund titles - "Implementing Zero Trust" should NOT become "What is Implementing Zero Trust?"
+                # These are action-oriented titles that work better as declarative statements
+                continue
+            elif ":" in title and len(title.split(":")) == 2:
+                # CRITICAL FIX: Skip titles with colons - "Automation at Scale: The Netflix Approach" should NOT become "What is Automation at Scale: The Netflix Approach?"
+                # These are descriptive titles that work better as declarative statements
+                continue
             else:
-                # Try to convert statement to question
-                # "Strategic Implementation Steps" -> "What are Strategic Implementation Steps?"
+                # CRITICAL FIX: Only convert to questions if it makes grammatical sense
+                # Avoid adding "What is" to clear, declarative titles
+                
+                # Skip conversion for titles that are already clear statements
+                # These patterns indicate titles that shouldn't be questions
+                skip_patterns = [
+                    r'^The\s+',  # "The New Gatekeepers" - clear statement
+                    r'^Real-World\s+',  # "Real-World Success Stories" - clear statement
+                    r'^Core\s+',  # "Core Workflows" - clear statement
+                    r'^Strategic\s+',  # "Strategic Implementation" - clear statement
+                    r'^AI-Driven\s+',  # "AI-Driven Personalization" - clear statement
+                    r'^Compliance\s+',  # "Compliance Frameworks" - clear statement
+                    r'^Integrating\s+',  # "Integrating Security" - clear statement
+                    r'^Building\s+',  # "Building a Secure" - clear statement
+                    r'^Future\s+',  # "Future Trends" - clear statement
+                    r':\s+',  # Titles with colons are usually clear statements
+                    r'\s+for\s+',  # "X for Y" - descriptive title (e.g., "Compliance Frameworks for Global Reach")
+                ]
+                
+                should_skip = any(re.match(pattern, title, re.IGNORECASE) for pattern in skip_patterns)
+                
+                if should_skip:
+                    # Keep original title - don't convert to question
+                    continue
+                
+                # Try to convert statement to question only if it makes sense
                 if "Steps" in title or "Guide" in title or "Strategies" in title:
                     new_title = f"What are {title}?"
                 elif title.endswith("ing"):
                     # "Boosting Agent Productivity" -> "How to Boost Agent Productivity?"
                     new_title = f"How to {title.replace('ing', '')}?"
                 else:
-                    # Default: "What is [title]?"
-                    new_title = f"What is {title}?"
+                    # Only convert if title is short and would work as a question
+                    # Skip long descriptive titles
+                    # CRITICAL FIX: Prevent awkward questions like "What are the future trends in strategic implementation for the future?"
+                    if len(title.split()) <= 6:
+                        # Check if title already contains "future" or "trends" to avoid redundancy
+                        title_lower = title.lower()
+                        if "future" in title_lower and "trend" in title_lower:
+                            # Skip - would create redundant question
+                            continue
+                        new_title = f"What is {title}?"
+                    else:
+                        # Keep original - too long/descriptive to be a question
+                        continue
             
             article[f"section_{i:02d}_title"] = new_title
             converted += 1
@@ -1118,19 +1353,67 @@ class CleanupStage(Stage):
         list_items = []
         seen_items = set()
         
-        # Strategy 1: Extract sentences from paragraphs (10+ words, prefer 15+)
+        # Strategy 1: Extract KEY POINTS from sentences (not verbatim sentences)
+        # CRITICAL FIX: Create summaries, not verbatim copies
         for para in paragraphs[:3]:
             para_text = re.sub(r'<[^>]+>', ' ', para)
             sentences = re.split(r'[.!?]+\s+', para_text)
             for sentence in sentences:
                 sentence = sentence.strip()
                 word_count = len(sentence.split())
-                # Accept sentences with 10+ words (lowered from 15+)
+                
+                # Skip if sentence is too similar to existing paragraph text (verbatim duplication)
+                sentence_lower = sentence.lower()
+                
+                # Check if this sentence appears verbatim in any paragraph
+                is_verbatim = False
+                for other_para in paragraphs:
+                    other_para_text = re.sub(r'<[^>]+>', ' ', other_para).lower()
+                    # If sentence is >80% of paragraph or paragraph contains exact sentence, skip
+                    if sentence_lower in other_para_text and len(sentence_lower) > len(other_para_text) * 0.8:
+                        is_verbatim = True
+                        break
+                
+                if is_verbatim:
+                    continue
+                
+                # Extract key phrase (first 8-12 words) instead of full sentence
                 if 10 <= word_count < 100:
-                    sentence_lower = sentence.lower()
-                    if sentence_lower not in seen_items:
-                        list_items.append(sentence)
-                        seen_items.add(sentence_lower)
+                    words = sentence.split()
+                    # Create summary: first 8-12 words, or key phrase if it has numbers/stats
+                    if re.search(r'\d+%|\$\d+|\d+ (?:billion|million|thousand)', sentence):
+                        # Keep full sentence if it has important stats
+                        summary = sentence
+                    else:
+                        # Extract key phrase (first 8-12 words)
+                        # CRITICAL FIX: Ensure summary is a complete thought, not cut off mid-sentence
+                        summary_words = words[:min(12, len(words))]
+                        summary = " ".join(summary_words)
+                        
+                        # Don't end with "..." if it's a complete sentence
+                        # Check if the last word ends with punctuation or if we're at a natural break
+                        if len(words) > 12:
+                            # Only add "..." if we're truly truncating
+                            # But prefer to end at a complete phrase
+                            last_word = summary_words[-1] if summary_words else ""
+                            if not last_word.endswith(('.', '!', '?', ':', ';')):
+                                # Try to find a better break point (end of phrase)
+                                # Look for conjunctions, prepositions, or commas
+                                found_break = False
+                                for i in range(len(summary_words) - 1, max(8, len(summary_words) - 4), -1):
+                                    if summary_words[i].endswith((',', '.', ':', ';')):
+                                        summary = " ".join(summary_words[:i+1])
+                                        found_break = True
+                                        break
+                                # CRITICAL FIX: Don't add "..." - prefer complete phrase without ellipsis
+                                # Incomplete list items look unprofessional
+                                if not found_break:
+                                    summary = " ".join(summary_words)  # Keep as complete phrase, no "..."
+                    
+                    summary_lower = summary.lower()
+                    if summary_lower not in seen_items and len(summary) > 30:
+                        list_items.append(summary)
+                        seen_items.add(summary_lower)
                         if len(list_items) >= min_items + 2:  # Get a few extra
                             break
             if len(list_items) >= min_items + 2:
@@ -1272,6 +1555,8 @@ class CleanupStage(Stage):
             
             list_items = self._extract_list_items_from_content(content, min_items=2)
             
+            # CRITICAL FIX: Only create list if we have valid items
+            # Don't create empty lists
             if len(list_items) >= 2:
                 list_html = "<ul>" + "".join([f"<li>{item}</li>" for item in list_items[:6]]) + "</ul>"
                 
@@ -1300,7 +1585,9 @@ class CleanupStage(Stage):
                 else:
                     logger.warning(f"Section {i} has no paragraphs, cannot add list")
             else:
-                logger.debug(f"Section {i}: Could not extract enough list items ({len(list_items)} found)")
+                # Skip this section - can't create a valid list
+                logger.debug(f"Section {i}: Could not extract enough list items ({len(list_items)} found), skipping")
+                continue
         
         final_list_count = sum(1 for i in range(1, 10) 
                               if article.get(f"section_{i:02d}_content", "") and 

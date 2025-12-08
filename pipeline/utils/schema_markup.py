@@ -12,6 +12,7 @@ def generate_article_schema(
     output: ArticleOutput,
     company_data: Optional[Dict[str, Any]] = None,
     article_url: Optional[str] = None,
+    validated_citations: Optional[List] = None,
 ) -> Dict:
     """
     Generate comprehensive JSON-LD Article schema markup.
@@ -116,7 +117,13 @@ def generate_article_schema(
         schema["image"] = image_obj
     
     # v3.2: Add citation property for AEO (AI crawlers parse this)
-    if hasattr(output, 'Sources') and output.Sources:
+    # CRITICAL FIX: Use validated citations if available (excludes invalid 404 URLs)
+    if validated_citations:
+        citations = _parse_citations_from_validated_list(validated_citations)
+        if citations:
+            schema["citation"] = citations
+    elif hasattr(output, 'Sources') and output.Sources:
+        # Fallback: Parse from Sources field if validated citations not available
         citations = _parse_citations_from_sources(output.Sources)
         if citations:
             schema["citation"] = citations
@@ -340,9 +347,13 @@ def generate_all_schemas(
     article_url: Optional[str] = None,
     base_url: Optional[str] = None,
     faq_items: Optional[List[Dict[str, str]]] = None,
+    validated_citations: Optional[List] = None,
 ) -> List[Dict]:
     """
     Generate all relevant schemas for an article.
+    
+    Args:
+        validated_citations: Optional CitationList with validated citations (invalid URLs filtered out)
     
     Returns:
         List of schema dicts
@@ -350,7 +361,7 @@ def generate_all_schemas(
     schemas = []
     
     # Article schema (always)
-    article_schema = generate_article_schema(output, company_data, article_url)
+    article_schema = generate_article_schema(output, company_data, article_url, validated_citations)
     schemas.append(article_schema)
     
     # FAQPage schema (if FAQs exist)
@@ -412,6 +423,43 @@ def _get_all_section_content(output: ArticleOutput) -> str:
         output.section_07_content, output.section_08_content, output.section_09_content,
     ]
     return " ".join(s for s in sections if s)
+
+
+def _parse_citations_from_validated_list(validated_citations) -> List[Dict]:
+    """
+    Parse validated CitationList to extract citations for JSON-LD schema.
+    
+    CRITICAL FIX: Uses validated citations (invalid 404 URLs already filtered out).
+    
+    Args:
+        validated_citations: CitationList object with validated citations
+        
+    Returns:
+        List of citation dicts for schema.org citation property
+    """
+    if not validated_citations:
+        return []
+    
+    citations = []
+    
+    # Check if it's a CitationList object
+    if hasattr(validated_citations, 'citations'):
+        citation_list = validated_citations.citations
+    elif isinstance(validated_citations, list):
+        citation_list = validated_citations
+    else:
+        return []
+    
+    for citation in citation_list:
+        if hasattr(citation, 'url') and hasattr(citation, 'title'):
+            citation_dict = {
+                "@type": "CreativeWork",
+                "url": citation.url.strip(),
+                "name": citation.title.strip()
+            }
+            citations.append(citation_dict)
+    
+    return citations
 
 
 def _parse_citations_from_sources(sources: str) -> List[Dict]:

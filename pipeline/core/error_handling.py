@@ -572,5 +572,5 @@ def with_image_fallback(stage: str):
         stage=stage,
         retry_config=RETRY_CONFIGS["image_generation"],
         circuit_breaker=circuit_breakers.get("image_api"),
-        fallback=lambda *args, **kwargs: {"image_url": GracefulDegradation.mock_image_generation()}
+        fallback=lambda *args, **kwargs: GracefulDegradation.mock_image_generation()  # Return string URL directly, not dict
     )

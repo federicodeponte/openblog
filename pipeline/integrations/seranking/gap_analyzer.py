@@ -11,13 +11,21 @@ Version: 1.0.0
 import requests
 import json
 import csv
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
 import argparse
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configuration
-API_KEY = "7c94fda2-0e28-ac6c-6a32-5cfc8c461182"
+API_KEY = os.environ.get("SERANKING_API_KEY")
+if not API_KEY:
+    raise ValueError("SERANKING_API_KEY environment variable is required. Please set it in your .env file.")
+
 BASE_URL = "https://api.seranking.com/v1"
 HEADERS = {
     "Authorization": f"Token {API_KEY}",
@@ -391,7 +399,13 @@ Examples:
     }
 
     # Initialize API and analyzer
-    api = SEORankingAPI(API_KEY)
+    api_key = os.environ.get("SERANKING_API_KEY")
+    if not api_key:
+        print("❌ Error: SERANKING_API_KEY environment variable is required")
+        print("   Please set it in your .env file: SERANKING_API_KEY=your_api_key_here")
+        sys.exit(1)
+    
+    api = SEORankingAPI(api_key)
     analyzer = AEOContentGapAnalyzer(api)
 
     # Temporarily store custom filters

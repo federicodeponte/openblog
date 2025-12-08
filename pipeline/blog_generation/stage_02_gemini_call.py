@@ -27,6 +27,8 @@ Combined with tools = deep research happens naturally.
 import logging
 import json
 from typing import Dict, Any
+from pathlib import Path
+from datetime import datetime
 
 from ..core.execution_context import ExecutionContext
 from ..core.workflow_engine import Stage
@@ -103,6 +105,23 @@ class GeminiCallStage(Stage):
 
         # Store raw response (now direct JSON string from structured output)
         context.raw_article = raw_response
+
+        # Save raw output for debugging/analysis
+        try:
+            output_dir = Path("output/raw_gemini_outputs")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            raw_output_file = output_dir / f"raw_output_{timestamp}.json"
+            with open(raw_output_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "timestamp": timestamp,
+                    "response_size": len(raw_response),
+                    "raw_json": raw_response,
+                    "parsed_preview": json.loads(raw_response) if raw_response.strip().startswith('{') else None
+                }, f, indent=2, ensure_ascii=False)
+            logger.info(f"💾 Raw Gemini output saved to: {raw_output_file}")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not save raw output: {e}")
 
         # Log response preview
         preview = raw_response[:200].replace("\n", " ")

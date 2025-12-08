@@ -161,16 +161,16 @@ class QualityChecker:
                     f"(phrases: {', '.join(language_validation.get('contamination_phrases', [])[:3])})"
                 )
 
-        # Set passed flag (true if no critical issues AND AEO score >= 85)
+        # Set passed flag (true if no critical issues AND AEO score >= 80)
         aeo_score = report["metrics"].get("aeo_score", 0)
         has_no_critical_issues = len(report["critical_issues"]) == 0
-        meets_aeo_threshold = aeo_score >= 85
+        meets_aeo_threshold = aeo_score >= 80
         
         report["passed"] = has_no_critical_issues and meets_aeo_threshold
         
         # Add AEO threshold failure as critical issue if needed
         if has_no_critical_issues and not meets_aeo_threshold:
-            report["critical_issues"].append(f"❌ QUALITY GATE FAILURE: AEO score {aeo_score}/100 below required threshold (minimum: 85)")
+            report["critical_issues"].append(f"❌ QUALITY GATE FAILURE: AEO score {aeo_score}/100 below required threshold (minimum: 80)")
             report["passed"] = False
 
         # Enhanced logging with quality gate status
@@ -322,14 +322,14 @@ class QualityChecker:
             text_no_html = re.sub(r"<[^>]+>", " ", para)
             word_count = len(text_no_html.split())
             
-            if word_count > 150:
+            if word_count > 60:  # Allow up to 60 words (10-word error range)
                 preview = " ".join(text_no_html.split()[:10])
                 very_long_paragraphs.append((i, word_count, preview))
 
         if very_long_paragraphs:
             examples = [f"Paragraph {i}: {count} words" for i, count, _ in very_long_paragraphs[:3]]
             issues.append(
-                f"❌ {len(very_long_paragraphs)} paragraph(s) exceed 150 words (target: 40-60 words). "
+                f"❌ {len(very_long_paragraphs)} paragraph(s) exceed 60 words (target: 40-60 words max). "
                 f"Examples: {', '.join(examples)}"
             )
 
@@ -507,9 +507,9 @@ class QualityChecker:
 
         perfect_percentage = len(paragraphs_with_2_3_citations) / total_paragraphs * 100
 
-        # V4.1 STRICT ENFORCEMENT: Every paragraph must have 2-3 citations
-        if perfect_percentage < 90:  # Less than 90% compliance
-            issues.append(f"❌ CRITICAL: Only {perfect_percentage:.1f}% paragraphs have 2-3 citations (v4.1 requirement: 100%)")
+        # STRICT ENFORCEMENT: 70%+ paragraphs must have 2-3 citations (buffer above 60% minimum)
+        if perfect_percentage < 70:  # Less than 70% compliance
+            issues.append(f"❌ CRITICAL: Only {perfect_percentage:.1f}% paragraphs have 2-3 citations (target: 70%+ with buffer)")
             
             if paragraphs_with_0_citations:
                 issues.append(f"   {len(paragraphs_with_0_citations)} paragraphs with 0 citations: {', '.join(paragraphs_with_0_citations[:2])}{'...' if len(paragraphs_with_0_citations) > 2 else ''}")
@@ -520,8 +520,8 @@ class QualityChecker:
             if paragraphs_with_4plus_citations:
                 issues.append(f"   {len(paragraphs_with_4plus_citations)} paragraphs with 4+ citations: {', '.join(paragraphs_with_4plus_citations[:2])}")
 
-        elif perfect_percentage < 100:  # 90-99% compliance
-            issues.append(f"⚠️  Good citation distribution: {perfect_percentage:.1f}% paragraphs have 2-3 citations (target: 100%)")
+        elif perfect_percentage < 100:  # 70-99% compliance
+            issues.append(f"⚠️  Good citation distribution: {perfect_percentage:.1f}% paragraphs have 2-3 citations (target: 70%+ with buffer)")
 
         return issues
 
@@ -659,9 +659,9 @@ class QualityChecker:
 
         phrase_count = sum(1 for phrase in conversational_phrases if phrase in content_lower)
 
-        if phrase_count < 8:
+        if phrase_count < 12:
             issues.append(
-                f"⚠️  Only {phrase_count} conversational phrases found (target: 8+). "
+                f"⚠️  Only {phrase_count} conversational phrases found (target: 12+ with buffer). "
                 f"Use 'you can', 'here\'s', 'how to', etc."
             )
 

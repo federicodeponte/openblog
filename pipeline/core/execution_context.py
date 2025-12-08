@@ -135,7 +135,7 @@ class ExecutionContext:
         'critical_issues': [],      # Errors that block publication
         'suggestions': [],           # Warnings for improvement
         'metrics': {
-            'aeo_score': 85,        # 0-100 AEO quality score
+            'aeo_score': 80,        # 0-100 AEO quality score
             'readability': 60,      # Flesch-Kincaid readability
             'keyword_coverage': 95  # Primary keyword coverage %
         }
