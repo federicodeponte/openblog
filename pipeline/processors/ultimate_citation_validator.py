@@ -1,11 +1,12 @@
 """
-Simple Citation Validator
+Smart Citation Validator
 
-Uses OpenDraft's simple approach for basic citation validation:
-- URL status validation
+Intelligent citation validation with Gemini + web search:
+- URL status validation with replacement
+- Gemini-powered source quality analysis  
+- Smart alternative source finding via web search
 - Metadata quality analysis
 - Author sanity checks
-- Simple, focused validation without bloat
 """
 
 import asyncio
@@ -18,6 +19,8 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 import httpx
 import requests
+
+from ..models.gemini_client import GeminiClient
 
 
 logger = logging.getLogger(__name__)
@@ -56,27 +59,35 @@ class CitationValidationIssue:
     citation_text: str
 
 
-class SimpleCitationValidator:
+class SmartCitationValidator:
     """
-    Simple citation validator using OpenDraft's approach (might be better than ours).
+    Smart citation validator with Gemini + web search replacement.
     
     Provides:
-    - URL status validation 
+    - URL status validation
+    - Gemini-powered alternative source finding
+    - Smart citation replacement when URLs are broken
     - Metadata quality analysis
     - Author sanity checks
     """
 
     def __init__(
         self,
+        gemini_client: Optional[GeminiClient] = None,
         timeout: float = 10.0,
+        max_search_attempts: int = 3
     ):
         """
-        Initialize simple citation validator.
+        Initialize smart citation validator.
         
         Args:
+            gemini_client: Gemini client for web search and analysis
             timeout: HTTP request timeout in seconds
+            max_search_attempts: Maximum attempts to find alternative sources
         """
+        self.gemini_client = gemini_client
         self.timeout = timeout
+        self.max_search_attempts = max_search_attempts
         
         # Async HTTP client for URL validation
         self.http_client = httpx.AsyncClient(
@@ -164,7 +175,40 @@ class SimpleCitationValidator:
         
         issues = []
         
-        # Simple validation - URL and metadata only
+        # Step 1: Basic URL validation
+        url_is_valid = False
+        if url:
+            status_code, error_msg = self.validate_url_status_simple(url)
+            if status_code and 200 <= status_code < 400:
+                url_is_valid = True
+            else:
+                if error_msg:
+                    issues.append(f"URL validation failed: {error_msg}")
+                if status_code:
+                    issues.append(f"HTTP {status_code}")
+        
+        # Step 2: If URL is broken and we have Gemini, try to find alternative
+        if not url_is_valid and self.gemini_client and title:
+            logger.info(f"🔍 Searching for alternative source for: {title[:50]}...")
+            alternative_url = await self._find_alternative_source(title, citation)
+            if alternative_url:
+                logger.info(f"✅ Found alternative: {alternative_url}")
+                # Validate the alternative
+                alt_status, alt_error = self.validate_url_status_simple(alternative_url)
+                if alt_status and 200 <= alt_status < 400:
+                    return ValidationResult(
+                        is_valid=True,
+                        url=alternative_url,
+                        title=title,
+                        issues=issues + [f"Original URL replaced: {url}"],
+                        validation_type='alternative_found'
+                    )
+                else:
+                    issues.append(f"Alternative URL also failed: {alt_error}")
+            else:
+                issues.append("No alternative source found")
+        
+        # Step 3: If original URL works, use it only
         
         # Step 2: Metadata quality checks
         metadata_issues = self.check_metadata_quality(citation)
@@ -175,25 +219,14 @@ class SimpleCitationValidator:
             author_issues = self.check_author_sanity(authors)
             issues.extend(author_issues)
         
-        # Step 3: Simple URL validation (from OpenDraft)
-        if url:
-            status_code, error_msg = self.validate_url_status_simple(url)
-            
-            if status_code and 200 <= status_code < 400:
-                # URL is valid
-                if not self._is_forbidden_or_competitor(url, competitors):
-                    return ValidationResult(
-                        is_valid=True,
-                        url=url,
-                        title=title,
-                        issues=issues,
-                        validation_type='original_url'
-                    )
-            else:
-                if error_msg:
-                    issues.append(f"URL validation failed: {error_msg}")
-                if status_code:
-                    issues.append(f"HTTP {status_code}")
+        if url_is_valid and not self._is_forbidden_or_competitor(url, competitors):
+            return ValidationResult(
+                is_valid=True,
+                url=url,
+                title=title,
+                issues=issues,
+                validation_type='original_url'
+            )
         
         # Step 4: Final fallback - mark as invalid but preserve data
         return ValidationResult(
@@ -387,6 +420,96 @@ class SimpleCitationValidator:
             
         except Exception:
             return True
+
+    async def _find_alternative_source(self, title: str, citation: Dict[str, Any]) -> Optional[str]:
+        """
+        Use Gemini + web search to find alternative source when URL is broken.
+        
+        Args:
+            title: Citation title to search for
+            citation: Full citation dict for context
+            
+        Returns:
+            Alternative URL if found, None otherwise
+        """
+        if not self.gemini_client:
+            return None
+            
+        try:
+            # Create search query from title
+            search_query = self._create_search_query(title, citation)
+            
+            # Use Gemini with Google Search to find alternative sources
+            prompt = f"""You are helping fix a broken citation. The original source is no longer available.
+
+TASK: Find a high-quality alternative source for this content.
+
+Citation Title: {title}
+Authors: {citation.get('authors', [])}
+Year: {citation.get('year', 'Unknown')}
+Original URL: {citation.get('url', 'None')} (broken)
+
+REQUIREMENTS:
+1. Search for authoritative sources (.edu, .gov, .org, major publications)
+2. Avoid blogs, personal websites, or low-quality sources
+3. Prefer recent sources (2020+) unless historical context needed
+4. Return ONLY the URL of the best alternative source
+5. If no good alternative exists, return "NO_ALTERNATIVE_FOUND"
+
+Search for: {search_query}"""
+
+            # Use Gemini with web search enabled
+            response = await self.gemini_client.generate_content(
+                prompt,
+                enable_tools=True  # Enable Google Search grounding
+            )
+            
+            if response:
+                potential_url = response.strip()
+                
+                # Validate that we got a URL
+                if potential_url.startswith(('http://', 'https://')) and 'NO_ALTERNATIVE_FOUND' not in potential_url.upper():
+                    return potential_url
+                    
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Alternative source search failed: {e}")
+            return None
+
+    def _create_search_query(self, title: str, citation: Dict[str, Any]) -> str:
+        """
+        Create optimized search query for finding alternative sources.
+        
+        Args:
+            title: Citation title
+            citation: Citation metadata
+            
+        Returns:
+            Optimized search query string
+        """
+        # Start with title
+        query_parts = [title]
+        
+        # Add authors if available
+        authors = citation.get('authors', [])
+        if authors and len(authors) > 0:
+            # Use first author for search
+            query_parts.append(authors[0])
+        
+        # Add year if available and recent
+        year = citation.get('year')
+        if year and year >= 2015:  # Only add year if somewhat recent
+            query_parts.append(str(year))
+        
+        # Create final query
+        search_query = ' '.join(query_parts)
+        
+        # Limit length and clean up
+        if len(search_query) > 200:
+            search_query = search_query[:200]
+        
+        return search_query.strip()
 
     async def close(self):
         """Close HTTP client."""

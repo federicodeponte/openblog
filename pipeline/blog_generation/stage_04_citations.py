@@ -30,7 +30,7 @@ from ..core import ExecutionContext, Stage
 from ..models.citation import Citation, CitationList
 from ..models.gemini_client import GeminiClient
 from ..processors.url_validator import CitationURLValidator
-from ..processors.ultimate_citation_validator import SimpleCitationValidator, ValidationResult
+from ..processors.ultimate_citation_validator import SmartCitationValidator, ValidationResult
 from ..config import Config
 
 logger = logging.getLogger(__name__)
@@ -402,7 +402,8 @@ class CitationsStage(Stage):
         if not self.ultimate_validator:
             if not self.gemini_client:
                 self.gemini_client = GeminiClient()
-            self.ultimate_validator = SimpleCitationValidator(
+            self.ultimate_validator = SmartCitationValidator(
+                gemini_client=self.gemini_client,
                 timeout=8.0
             )
         

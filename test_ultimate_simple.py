@@ -16,13 +16,20 @@ async def test_ultimate_validator():
     """Test the ultimate citation validator with mock data."""
     
     try:
-        from pipeline.processors.ultimate_citation_validator import SimpleCitationValidator, ValidationResult
+        from pipeline.processors.ultimate_citation_validator import SmartCitationValidator, ValidationResult
+        from pipeline.models.gemini_client import GeminiClient
         
         print("🚀 Testing Ultimate Citation Validator")
         print("=" * 50)
         
-        # Create validator without Gemini client for basic testing
-        validator = SimpleCitationValidator()
+        # Create Gemini client for testing
+        try:
+            gemini_client = GeminiClient()
+        except:
+            print("⚠️  Gemini client not available, testing basic validation only")
+            gemini_client = None
+        
+        validator = SmartCitationValidator(gemini_client=gemini_client)
         
         # Test citations with various quality issues
         test_citations = [
