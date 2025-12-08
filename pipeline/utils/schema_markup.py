@@ -170,7 +170,7 @@ def generate_faqpage_schema(
         "mainEntity": [
             {
                 "@type": "Question",
-                "name": item["question"],
+                "name": _strip_html(item["question"]),  # ROOT-LEVEL FIX: Strip HTML from questions too
                 "acceptedAnswer": {
                     "@type": "Answer",
                     "text": _strip_html(item["answer"])
@@ -216,10 +216,12 @@ def generate_breadcrumb_schema(
     ]
     
     if article_url:
+        # ROOT-LEVEL FIX: Strip HTML tags from headline for Schema.org
+        clean_headline = _strip_html(output.Headline)
         items.append({
             "@type": "ListItem",
             "position": 3,
-            "name": output.Headline,
+            "name": clean_headline,
             "item": article_url
         })
     

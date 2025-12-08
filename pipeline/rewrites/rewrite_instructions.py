@@ -15,6 +15,7 @@ class RewriteMode(str, Enum):
     """
     REFRESH = "refresh"  # Update content with new information
     QUALITY_FIX = "quality_fix"  # Fix quality issues (keywords, length, AI markers)
+    COMPREHENSIVE_TRANSFORM = "comprehensive_transform"  # Single-pass all-issues fix (Stage 2b)
     SEO_OPTIMIZE = "seo_optimize"  # Future: SEO-specific optimizations
     TRANSLATE = "translate"  # Future: Translate to another language
 

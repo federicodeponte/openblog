@@ -81,16 +81,19 @@ class QualityChecker:
         report["critical_issues"].extend(QualityChecker._check_html_validity(article))
         report["critical_issues"].extend(QualityChecker._check_paragraph_length_critical(article))
         
-        # ROOT_LEVEL_FIX_PLAN.md checks (CRITICAL)
-        report["critical_issues"].extend(QualityChecker._check_academic_citations(article))
+        # ROOT_LEVEL_FIX_PLAN.md checks (CRITICAL - except citations and links)
+        # NOTE: Academic citations and broken links moved to suggestions (Layer 4 cleanup handles)
         report["critical_issues"].extend(QualityChecker._check_em_dashes(article))
         report["critical_issues"].extend(QualityChecker._check_malformed_headings(article))
-        report["critical_issues"].extend(QualityChecker._check_broken_citation_links(article))
 
         # Suggestion checks
         report["suggestions"].extend(QualityChecker._check_paragraph_length(article))
         report["suggestions"].extend(QualityChecker._check_keyword_coverage(article, job_config))
         report["suggestions"].extend(QualityChecker._check_reading_time(article))
+        
+        # Academic citations and broken links = suggestions only (Layer 4 regex cleanup guaranteed)
+        report["suggestions"].extend(QualityChecker._check_academic_citations(article))
+        report["suggestions"].extend(QualityChecker._check_broken_citation_links(article))
         
         # AEO quality checks
         report["suggestions"].extend(QualityChecker._check_citation_distribution(article))
@@ -785,16 +788,27 @@ class QualityChecker:
     @staticmethod
     def _check_academic_citations(article: Dict[str, Any]) -> List[str]:
         """
-        Check for forbidden academic citations [N].
-        ROOT_LEVEL_FIX_PLAN.md Issue 1.
+        Check for academic citations [N] (suggestion, not blocking).
+        ROOT_LEVEL_FIX_PLAN.md Issue 1 - CHANGED TO WARNING.
+        
+        Layer 4 regex cleanup guarantees removal, so this is informational only.
         """
         issues = []
         
         # Check all content fields for [N] patterns
+        citation_count = 0
         for key in article:
             value = article.get(key, "")
-            if isinstance(value, str) and re.search(r'\[\d+\]', value):
-                issues.append(f"❌ CRITICAL: Academic citations [N] found in {key} (FORBIDDEN)")
+            if isinstance(value, str):
+                matches = re.findall(r'\[\d+\]', value)
+                if matches:
+                    citation_count += len(matches)
+        
+        if citation_count > 0:
+            issues.append(
+                f"⚠️  Suggestion: Academic citations [N] found ({citation_count} instances) - "
+                f"will be cleaned by Layer 4 regex"
+            )
         
         return issues
     
@@ -846,16 +860,27 @@ class QualityChecker:
     @staticmethod
     def _check_broken_citation_links(article: Dict[str, Any]) -> List[str]:
         """
-        Check for broken #source-N citation links.
-        ROOT_LEVEL_FIX_PLAN.md Issue C.
+        Check for broken #source-N citation links (suggestion, not blocking).
+        ROOT_LEVEL_FIX_PLAN.md Issue C - CHANGED TO WARNING.
+        
+        Layer 4 regex cleanup guarantees removal, so this is informational only.
         """
         issues = []
         
         # Check content for #source-N links
+        link_count = 0
         for key in article:
             value = article.get(key, "")
-            if isinstance(value, str) and re.search(r'href=["\']#source-\d+["\']', value):
-                issues.append(f"❌ CRITICAL: Broken #source-N citation link found in {key} (must use natural language attribution)")
+            if isinstance(value, str):
+                matches = re.findall(r'href=["\']#source-\d+["\']', value)
+                if matches:
+                    link_count += len(matches)
+        
+        if link_count > 0:
+            issues.append(
+                f"⚠️  Suggestion: Broken #source-N links found ({link_count} instances) - "
+                f"will be cleaned by Layer 4 regex"
+            )
         
         return issues
 

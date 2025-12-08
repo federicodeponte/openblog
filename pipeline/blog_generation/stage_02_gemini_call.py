@@ -90,10 +90,23 @@ class GeminiCallStage(Stage):
         logger.info("📐 Built JSON schema from ArticleOutput (prevents hallucinations)")
 
         # Call Gemini API with tools + JSON schema (with error handling and retries)
-        logger.info(f"Calling Gemini API ({self.client.MODEL}) with tools + schema...")
+        logger.info(f"Calling Gemini API ({self.client.MODEL}) with tools + schema + system instruction...")
         logger.info("(Deep research via googleSearch + urlContext, output forced to JSON)")
 
-        raw_response = await self._generate_content_with_retry(context, response_schema=response_schema)
+        # System instruction (high priority rules)
+        system_instruction = """
+You are a professional content writer. CRITICAL RULES:
+- NEVER use academic citations like [1], [2], [3]
+- Use natural language attribution: "according to X study"
+- NEVER use em dashes (—)
+- Use commas or parentheses instead
+"""
+
+        raw_response = await self._generate_content_with_retry(
+            context, 
+            response_schema=response_schema,
+            system_instruction=system_instruction
+        )
 
         logger.info(f"✅ Gemini API call succeeded")
         logger.info(f"   Response size: {len(raw_response)} characters")
@@ -191,12 +204,14 @@ class GeminiCallStage(Stage):
         logger.info(f"   Meta_Description: {len(meta_description)} chars")
     
     @with_api_retry("stage_02")
-    async def _generate_content_with_retry(self, context: ExecutionContext, response_schema: Any = None) -> str:
+    async def _generate_content_with_retry(self, context: ExecutionContext, response_schema: Any = None, system_instruction: str = None) -> str:
         """
         Generate content with comprehensive error handling and retries.
         
         Args:
             context: Execution context with prompt
+            response_schema: Optional JSON schema for structured output
+            system_instruction: Optional system instruction (high priority)
             
         Returns:
             Raw Gemini response
@@ -209,6 +224,7 @@ class GeminiCallStage(Stage):
                 prompt=context.prompt,
                 enable_tools=True,  # CRITICAL: tools must be enabled!
                 response_schema=response_schema,  # JSON schema for structured output
+                system_instruction=system_instruction,  # High priority guidance
             )
             
             if not raw_response or len(raw_response.strip()) < 500:

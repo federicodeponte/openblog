@@ -492,6 +492,311 @@ START OUTPUT NOW:
 """
 
 
+def get_comprehensive_content_transformation_prompt(
+    original_content: str,
+    citations: list,
+    primary_keyword: str = "",
+    company_name: str = ""
+) -> str:
+    """
+    Build prompt for comprehensive content transformation (Stage 2b).
+    
+    Single-pass Gemini transformation that fixes ALL content quality issues at once:
+    - Academic citations [N] → inline natural language (using citation metadata)
+    - Standalone labels → natural list integration
+    - Em dashes → contextual commas/removal
+    - Robotic transitions → natural flow
+    - Malformed headings → clean headings
+    - Weird word passages → natural sentences
+    - Incomplete sentences → complete thoughts
+    - Double punctuation → single
+    
+    This is the MOST IMPORTANT prompt in the entire pipeline - it transforms
+    Gemini's raw output into production-ready, human-quality content.
+    
+    Args:
+        original_content: The article content (all sections concatenated)
+        citations: List of citation dicts with {number, url, title}
+        primary_keyword: Primary keyword for natural distribution
+        company_name: Company name for context
+    
+    Returns:
+        Comprehensive transformation prompt for Gemini 3.0 Pro Preview
+    """
+    
+    # Build citation reference section
+    citation_reference = ""
+    if citations:
+        citation_reference = "**Available Citations for Inline Transformation:**\n\n"
+        for cit in citations[:10]:  # Limit to first 10 to avoid token bloat
+            num = cit.get('number', '?')
+            title = cit.get('title', 'Source')[:100]
+            url = cit.get('url', '')
+            citation_reference += f"[{num}]: {title}\n    URL: {url}\n\n"
+    else:
+        citation_reference = "**Note:** No citation metadata available. Remove [N] markers if found.\n\n"
+    
+    return f"""You are an expert content editor transforming AI-generated content into professional, human-quality MARKDOWN text.
+
+Your task is to perform a COMPREHENSIVE CONTENT TRANSFORMATION on this article.
+This is a SINGLE-PASS transformation that fixes ALL quality issues at once.
+
+⚠️ CRITICAL: Input is MARKDOWN format. Output must also be PURE MARKDOWN (NO HTML tags).
+
+*** ORIGINAL CONTENT (MARKDOWN) ***
+
+{original_content}
+
+*** YOUR MISSION ***
+
+Transform this MARKDOWN content to be production-ready by fixing ALL of the following issues:
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #1: Academic Citations [N] → Inline Natural Language
+═══════════════════════════════════════════════════════════════════
+
+{citation_reference}
+
+**Your Task:**
+Convert ALL academic citation markers [N] to natural inline attribution using the citation metadata above.
+
+❌ BEFORE (academic style):
+GitHub Copilot increases developer productivity by 55% [1]. Amazon Q Developer reduced migration time by 60% [2].
+
+✅ AFTER (natural inline):
+GitHub Copilot's 2024 enterprise report shows a **55% increase** in developer productivity. AWS documented a **60% reduction** in migration time with their Q Developer tool.
+
+**Guidelines:**
+- Use natural language: "according to", "as noted in", "research from", "[Company]'s [Year] report"
+- Vary your phrasing - don't repeat the same attribution style
+- Integrate attribution smoothly into the sentence flow
+- Keep the factual accuracy - preserve the statistics and claims
+- Remove ALL bracket markers [1] [2] [3] completely
+- If citation metadata unavailable, keep the claim but remove the [N]
+- Use **bold** to emphasize key numbers and stats
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #2: Standalone Labels → Natural List Integration
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE (broken standalone labels):
+**GitHub Copilot:**
+
+**Amazon Q Developer:**
+
+- Feature 1
+
+✅ AFTER (natural integration):
+Leading AI code generation tools include:
+
+- **GitHub Copilot:** Context-aware code suggestions with 55% faster completions
+- **Amazon Q Developer:** AWS-integrated development assistant for cloud migrations
+
+This approach allows teams to select tools based on their specific needs.
+
+**Your Task:**
+- Find ALL standalone `**Label:**` patterns on their own lines
+- Convert to proper list items with descriptions or integrate into narrative
+- Ensure labels have accompanying content (15-30 words each)
+- Add a follow-up sentence after lists to maintain flow
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #3: Em Dashes (—) → Contextual Commas/Removal
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE (AI marker - em dashes):
+AI tools—like GitHub Copilot—are transforming development. Organizations—especially enterprises—report significant gains.
+
+✅ AFTER (natural punctuation):
+AI tools, like GitHub Copilot, are transforming development. Organizations, especially enterprises, report significant gains.
+
+**Your Task:**
+- Replace ALL em dashes (—, &mdash;, &#8212;) with commas or split into sentences
+- Choose based on context: mid-sentence → comma, long clause → new sentence
+- Count: Your output MUST have ZERO em dashes
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #4: Robotic Transitions → Natural Flow
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE (robotic AI phrases):
+Here's how enterprises adopt AI tools:
+
+Here's what you need to know:
+
+Key points include:
+
+Important considerations:
+
+That's why similarly, organizations...
+
+When you similarly, the tools...
+
+✅ AFTER (natural transitions):
+Enterprises adopt AI tools through several approaches:
+
+Understanding these factors is essential:
+
+Organizations should consider:
+
+Similarly, organizations...
+
+Similarly, the tools...
+
+**Phrases to Fix:**
+- "Here's how/what" → just state the action
+- "Key points:" → remove or rephrase naturally
+- "That's why similarly," → "Similarly,"
+- "When you similarly," → "Similarly,"
+- "so you can with" → "with"
+- "What is as we" → "As we"
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #5: Malformed Headings → Clean Headings
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE (duplicate question prefixes):
+What is How AI Tools Work?
+
+What is Why Security Matters??
+
+✅ AFTER (clean headings):
+How AI Tools Work
+
+Why Security Matters
+
+**Your Task:**
+- Remove duplicate "What is" prefixes
+- Remove double punctuation in headings (??, !!)
+- Ensure headings are grammatically correct
+- Note: Headings should NOT have Markdown ## syntax in content (section titles are already H2)
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #6: Weird Word Passages → Natural Sentences
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE (context loss/hallucination patterns):
+What is as we look at the market...
+
+so you can of the implementation...
+
+When you aI code generation...
+
+Here's however, the challenge...
+
+✅ AFTER (natural sentences):
+As we look at the market...
+
+for the implementation...
+
+AI code generation...
+
+However, the challenge...
+
+**Your Task:**
+- Fix broken grammar from AI context loss
+- Remove nonsensical word combinations
+- Ensure every sentence is grammatically correct
+- Fix lowercase "aI" → "AI" (proper capitalization)
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #7: Incomplete Sentences → Complete Thoughts
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE (trailing fragments):
+The market is changing rapidly. Ultimately,
+
+Organizations must adapt. However,
+
+✅ AFTER (complete sentences):
+The market is changing rapidly.
+
+Organizations must adapt to these changes.
+
+**Your Task:**
+- Complete any sentences ending with conjunctions (Ultimately, However, Similarly, Therefore)
+- Ensure every paragraph ends with a complete thought
+- Remove orphaned fragments
+
+═══════════════════════════════════════════════════════════════════
+🎯 TRANSFORMATION #8: Double Punctuation → Single
+═══════════════════════════════════════════════════════════════════
+
+❌ BEFORE:
+The tools are evolving.. Also,, organizations must adapt.
+
+What are the benefits??
+
+✅ AFTER:
+The tools are evolving. Also, organizations must adapt.
+
+What are the benefits?
+
+**Your Task:**
+- Fix all double commas (,,) → single comma
+- Fix all double periods (..) → single period
+- Fix double question marks (??) → single
+- Fix double exclamations (!!) → single
+
+═══════════════════════════════════════════════════════════════════
+🎯 CRITICAL: PRESERVE STRUCTURE & FACTS (MARKDOWN FORMAT)
+═══════════════════════════════════════════════════════════════════
+
+✅ **KEEP UNCHANGED:**
+- ALL Markdown formatting (**bold**, - lists, [links](url))
+- ALL facts, statistics, and data points
+- ALL internal links ([text](/magazine/slug))
+- Overall paragraph structure and flow (blank line separators)
+- Technical accuracy of all claims
+
+❌ **DO NOT:**
+- Rewrite content from scratch
+- Change the meaning or intent
+- Add new information not in the original
+- Remove facts or data points
+- Add HTML tags (<p>, <ul>, <li>, <strong>, <em>)
+- Remove internal links
+- Change Markdown to HTML
+
+═══════════════════════════════════════════════════════════════════
+🎯 VALIDATION CHECKLIST (VERIFY BEFORE SUBMITTING)
+═══════════════════════════════════════════════════════════════════
+
+Before you return the transformed content, verify:
+
+1. ✅ ZERO academic citations [N] remain (all converted to inline)
+2. ✅ ZERO em dashes (—) remain (all converted to commas/sentences)
+3. ✅ ZERO standalone labels remain (all integrated into lists/narrative)
+4. ✅ ZERO "Here's how/what" phrases remain
+5. ✅ ZERO malformed headings (no "What is How")
+6. ✅ ZERO weird passages (no "What is as we", "so you can with")
+7. ✅ ZERO incomplete sentences (no trailing "Ultimately,")
+8. ✅ ZERO double punctuation (,, .. ?? !!)
+9. ✅ ZERO HTML tags (should be pure Markdown: **bold**, - lists, [links](url))
+10. ✅ ALL internal links preserved ([text](/magazine/slug))
+11. ✅ ALL facts and data preserved
+12. ✅ Content flows naturally and reads like human-written text
+13. ✅ Paragraphs separated by blank lines
+
+═══════════════════════════════════════════════════════════════════
+🎯 OUTPUT INSTRUCTIONS
+═══════════════════════════════════════════════════════════════════
+
+Return ONLY the transformed MARKDOWN content.
+- No explanations or comments
+- No markdown code blocks (no ```)
+- No "Here's the transformed content" preface
+- Just the clean, transformed MARKDOWN
+- Start with plain text immediately (NOT with HTML tags)
+- Use **bold** for emphasis, - for lists, blank lines for paragraphs
+
+**Quality Standard:** The output should be indistinguishable from professionally written content.
+No reader should be able to tell it was AI-generated.
+
+START TRANSFORMED MARKDOWN CONTENT NOW:
+"""
+
+
 # Map modes to prompt functions
 PROMPT_BUILDERS = {
     "quality_fix": get_quality_fix_prompt,
@@ -503,5 +808,6 @@ SPECIALIZED_BUILDERS = {
     "keyword_reduction": get_keyword_reduction_prompt,
     "paragraph_expansion": get_paragraph_expansion_prompt,
     "ai_marker_removal": get_ai_marker_removal_prompt,
+    "comprehensive_transform": get_comprehensive_content_transformation_prompt,
 }
 

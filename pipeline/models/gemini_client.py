@@ -41,10 +41,14 @@ def build_article_response_schema(genai):
     This forces Gemini to output strict JSON matching our schema,
     preventing hallucinations from freeform text generation.
     
+    UPDATED: Now dynamically reads field descriptions from ArticleOutput
+    to ensure our explicit [N] bans reach Gemini.
+    
     Returns:
         genai.types.Schema object for response_schema parameter
     """
     from google.genai import types
+    from .output_schema import ArticleOutput
     
     # ComparisonTable sub-schema
     comparison_table_schema = types.Schema(
@@ -68,89 +72,27 @@ def build_article_response_schema(genai):
         required=["title", "headers", "rows"]
     )
     
+    # Build properties dynamically from ArticleOutput model
+    properties = {}
+    for field_name, field_info in ArticleOutput.model_fields.items():
+        if field_name == "tables":
+            # Special handling for tables (ARRAY of OBJECT)
+            properties["tables"] = types.Schema(
+                type=types.Type.ARRAY,
+                items=comparison_table_schema,
+                description=field_info.description or "Comparison tables (max 2)"
+            )
+        else:
+            # All other fields are STRING type
+            properties[field_name] = types.Schema(
+                type=types.Type.STRING,
+                description=field_info.description or f"{field_name} field"
+            )
+    
     # Main ArticleOutput schema
     return types.Schema(
         type=types.Type.OBJECT,
-        properties={
-            # Core content (REQUIRED)
-            "Headline": types.Schema(type=types.Type.STRING, description="Main article headline"),
-            "Subtitle": types.Schema(type=types.Type.STRING, description="Sub-headline (optional)"),
-            "Teaser": types.Schema(type=types.Type.STRING, description="2-3 sentence hook"),
-            "Direct_Answer": types.Schema(type=types.Type.STRING, description="40-60 word direct answer"),
-            "Intro": types.Schema(type=types.Type.STRING, description="Opening paragraph (80-120 words)"),
-            
-            # SEO metadata (REQUIRED)
-            "Meta_Title": types.Schema(type=types.Type.STRING, description="≤55 char SEO title"),
-            "Meta_Description": types.Schema(type=types.Type.STRING, description="≤130 char SEO description"),
-            
-            # Lead generation (optional)
-            "Lead_Survey_Title": types.Schema(type=types.Type.STRING, description="Optional survey title"),
-            "Lead_Survey_Button": types.Schema(type=types.Type.STRING, description="Optional CTA button"),
-            
-            # Content sections (section 1 REQUIRED, rest optional)
-            "section_01_title": types.Schema(type=types.Type.STRING, description="Section 1 heading (REQUIRED, NO HTML)"),
-            "section_01_content": types.Schema(type=types.Type.STRING, description="Section 1 HTML content (REQUIRED)"),
-            "section_02_title": types.Schema(type=types.Type.STRING, description="Section 2 heading (NO HTML)"),
-            "section_02_content": types.Schema(type=types.Type.STRING, description="Section 2 HTML content"),
-            "section_03_title": types.Schema(type=types.Type.STRING, description="Section 3 heading (NO HTML)"),
-            "section_03_content": types.Schema(type=types.Type.STRING, description="Section 3 HTML content"),
-            "section_04_title": types.Schema(type=types.Type.STRING, description="Section 4 heading (NO HTML)"),
-            "section_04_content": types.Schema(type=types.Type.STRING, description="Section 4 HTML content"),
-            "section_05_title": types.Schema(type=types.Type.STRING, description="Section 5 heading (NO HTML)"),
-            "section_05_content": types.Schema(type=types.Type.STRING, description="Section 5 HTML content"),
-            "section_06_title": types.Schema(type=types.Type.STRING, description="Section 6 heading (NO HTML)"),
-            "section_06_content": types.Schema(type=types.Type.STRING, description="Section 6 HTML content"),
-            "section_07_title": types.Schema(type=types.Type.STRING, description="Section 7 heading (NO HTML)"),
-            "section_07_content": types.Schema(type=types.Type.STRING, description="Section 7 HTML content"),
-            "section_08_title": types.Schema(type=types.Type.STRING, description="Section 8 heading (NO HTML)"),
-            "section_08_content": types.Schema(type=types.Type.STRING, description="Section 8 HTML content"),
-            "section_09_title": types.Schema(type=types.Type.STRING, description="Section 9 heading (NO HTML)"),
-            "section_09_content": types.Schema(type=types.Type.STRING, description="Section 9 HTML content"),
-            
-            # Key takeaways (at least 1 required)
-            "key_takeaway_01": types.Schema(type=types.Type.STRING, description="Key insight #1"),
-            "key_takeaway_02": types.Schema(type=types.Type.STRING, description="Key insight #2"),
-            "key_takeaway_03": types.Schema(type=types.Type.STRING, description="Key insight #3"),
-            
-            # People Also Ask (4 items)
-            "paa_01_question": types.Schema(type=types.Type.STRING, description="PAA question #1 (NO HTML)"),
-            "paa_01_answer": types.Schema(type=types.Type.STRING, description="PAA answer #1"),
-            "paa_02_question": types.Schema(type=types.Type.STRING, description="PAA question #2 (NO HTML)"),
-            "paa_02_answer": types.Schema(type=types.Type.STRING, description="PAA answer #2"),
-            "paa_03_question": types.Schema(type=types.Type.STRING, description="PAA question #3 (NO HTML)"),
-            "paa_03_answer": types.Schema(type=types.Type.STRING, description="PAA answer #3"),
-            "paa_04_question": types.Schema(type=types.Type.STRING, description="PAA question #4 (NO HTML)"),
-            "paa_04_answer": types.Schema(type=types.Type.STRING, description="PAA answer #4"),
-            
-            # FAQ (6 items, at least 5 required)
-            "faq_01_question": types.Schema(type=types.Type.STRING, description="FAQ question #1 (NO HTML)"),
-            "faq_01_answer": types.Schema(type=types.Type.STRING, description="FAQ answer #1"),
-            "faq_02_question": types.Schema(type=types.Type.STRING, description="FAQ question #2 (NO HTML)"),
-            "faq_02_answer": types.Schema(type=types.Type.STRING, description="FAQ answer #2"),
-            "faq_03_question": types.Schema(type=types.Type.STRING, description="FAQ question #3 (NO HTML)"),
-            "faq_03_answer": types.Schema(type=types.Type.STRING, description="FAQ answer #3"),
-            "faq_04_question": types.Schema(type=types.Type.STRING, description="FAQ question #4 (NO HTML)"),
-            "faq_04_answer": types.Schema(type=types.Type.STRING, description="FAQ answer #4"),
-            "faq_05_question": types.Schema(type=types.Type.STRING, description="FAQ question #5 (NO HTML)"),
-            "faq_05_answer": types.Schema(type=types.Type.STRING, description="FAQ answer #5"),
-            "faq_06_question": types.Schema(type=types.Type.STRING, description="FAQ question #6 (NO HTML)"),
-            "faq_06_answer": types.Schema(type=types.Type.STRING, description="FAQ answer #6"),
-            
-            # Image (optional, generated later)
-            "image_url": types.Schema(type=types.Type.STRING, description="Image URL (generated later)"),
-            "image_alt_text": types.Schema(type=types.Type.STRING, description="Image alt text (max 125 chars, NO HTML)"),
-            
-            # Sources and research
-            "Sources": types.Schema(type=types.Type.STRING, description="Citations (max 20)"),
-            "Search_Queries": types.Schema(type=types.Type.STRING, description="Research queries"),
-            
-            # Comparison tables (optional, max 2)
-            "tables": types.Schema(
-                type=types.Type.ARRAY,
-                items=comparison_table_schema,
-                description="Comparison tables (max 2, use for product/feature/pricing comparisons)"
-            ),
-        },
+        properties=properties,
         required=[
             "Headline", "Teaser", "Direct_Answer", "Intro", "Meta_Title", "Meta_Description",
             "section_01_title", "section_01_content"  # At least one section required
@@ -270,6 +212,7 @@ class GeminiClient:
         prompt: str,
         enable_tools: bool = True,
         response_schema: Any = None,
+        system_instruction: str = None,
     ) -> str:
         """
         Generate content using Gemini API with Google Search grounding.
@@ -278,6 +221,7 @@ class GeminiClient:
             prompt: Complete prompt string
             enable_tools: Whether to enable Google Search grounding (includes URL context)
             response_schema: Optional schema for structured JSON output
+            system_instruction: Optional system instruction (high priority guidance for Gemini)
 
         Returns:
             Raw response text (plain text with embedded JSON, or direct JSON if schema provided)
@@ -289,13 +233,19 @@ class GeminiClient:
         logger.debug(f"Prompt length: {len(prompt)} characters")
         logger.debug(f"Grounding tools: {enable_tools}")
         logger.debug(f"Response schema: {'Yes' if response_schema else 'No'}")
+        logger.debug(f"System instruction: {'Yes' if system_instruction else 'No'}")
 
         # Call API with retry logic
-        response_text = await self._call_api_with_retry(prompt, enable_tools, response_schema=response_schema)
+        response_text = await self._call_api_with_retry(
+            prompt, 
+            enable_tools, 
+            response_schema=response_schema,
+            system_instruction=system_instruction
+        )
 
         return response_text
 
-    async def _call_api_with_retry(self, prompt: str, enable_grounding: bool, response_schema: Any = None) -> str:
+    async def _call_api_with_retry(self, prompt: str, enable_grounding: bool, response_schema: Any = None, system_instruction: str = None) -> str:
         """
         Call Gemini API with exponential backoff retry.
 
@@ -303,6 +253,7 @@ class GeminiClient:
             prompt: Complete prompt
             enable_grounding: Whether to enable Google Search grounding (includes URL context)
             response_schema: Optional schema for structured JSON output
+            system_instruction: Optional system instruction (high priority)
 
         Returns:
             Response text
@@ -340,6 +291,7 @@ class GeminiClient:
                             tools=tools,
                             response_schema=response_schema,
                             response_mime_type="application/json" if response_schema else None,
+                            system_instruction=system_instruction,  # HIGH PRIORITY GUIDANCE
                         )
                     )
                 )

@@ -316,6 +316,15 @@ class RewriteEngine:
                 context=context
             )
         
+        elif instruction.mode == RewriteMode.COMPREHENSIVE_TRANSFORM:
+            from .rewrite_prompts import get_comprehensive_content_transformation_prompt
+            return get_comprehensive_content_transformation_prompt(
+                original_content=original_content,
+                citations=context.get("citations", []),
+                primary_keyword=context.get("primary_keyword", ""),
+                company_name=context.get("company_name", "")
+            )
+        
         else:
             raise ValueError(f"Unsupported rewrite mode: {instruction.mode}")
     

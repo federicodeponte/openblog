@@ -237,8 +237,13 @@ class StorageStage(Stage):
         if not company_url or not headline:
             return None
         
-        # Create slug from headline
-        slug = headline.lower()
+        # ROOT-LEVEL FIX: Strip ALL HTML tags from headline before creating slug
+        from html import unescape
+        clean_headline = re.sub(r'<[^>]+>', '', headline)  # Remove HTML tags
+        clean_headline = unescape(clean_headline)  # Unescape HTML entities
+        
+        # Create slug from clean headline
+        slug = clean_headline.lower()
         slug = re.sub(r'[^\w\s-]', '', slug)  # Remove special chars
         slug = re.sub(r'[-\s]+', '-', slug)   # Replace spaces with hyphens
         slug = slug.strip('-')

@@ -7,12 +7,19 @@ Simple, clean rendering with:
 - Open Graph metadata
 - Schema.org structured data
 - Optimized for SEO and accessibility
+- Markdown to HTML conversion
 """
 
 import logging
 import re
+import html
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+
+try:
+    import markdown
+except ImportError:
+    markdown = None  # Will install later
 
 from ..utils.schema_markup import generate_all_schemas, render_schemas_as_json_ld
 from ..models.output_schema import ArticleOutput
@@ -58,6 +65,46 @@ class HTMLRenderer:
         return f"{base}/{path}"
 
     @staticmethod
+    def _markdown_to_html(md_content: str) -> str:
+        """
+        Convert Markdown content to HTML.
+        
+        Uses Python-Markdown with extensions:
+        - extra: tables, fenced code, footnotes
+        - nl2br: newline to <br> conversion
+        - sane_lists: better list handling
+        
+        Args:
+            md_content: Markdown formatted text
+        
+        Returns:
+            HTML formatted text
+        """
+        if not md_content:
+            return ""
+        
+        if markdown is None:
+            logger.error("markdown library not installed - cannot convert Markdown to HTML")
+            logger.error("Run: pip install markdown")
+            return md_content  # Return as-is if markdown not installed
+        
+        # Configure Markdown parser with extensions
+        md = markdown.Markdown(extensions=[
+            'extra',       # Tables, fenced code, footnotes
+            'nl2br',       # Newlines to <br>
+            'sane_lists',  # Better list handling
+        ])
+        
+        # Convert Markdown to HTML
+        html_content = md.convert(md_content)
+        
+        # Post-process: wrap in <p> if no block elements
+        if html_content and not html_content.startswith(('<p>', '<h', '<ul>', '<ol>', '<div>', '<blockquote>')):
+            html_content = f'<p>{html_content}</p>'
+        
+        return html_content
+
+    @staticmethod
     def render(
         article: Dict[str, Any],
         company_data: Optional[Dict[str, Any]] = None,
@@ -81,7 +128,9 @@ class HTMLRenderer:
         # Extract key fields
         headline = HTMLRenderer._strip_html(article.get("Headline", "Untitled"))
         subtitle = HTMLRenderer._strip_html(article.get("Subtitle", ""))
-        intro = article.get("Intro", "")
+        intro_md = article.get("Intro", "")
+        # Convert intro from Markdown to HTML
+        intro = HTMLRenderer._markdown_to_html(intro_md) if intro_md else ""
         
         # Extract company info (needed for absolute URLs)
         company_name = company_data.get("company_name", "") if company_data else ""
@@ -114,13 +163,20 @@ class HTMLRenderer:
         read_time = article.get("read_time", 5)
         publication_date = article.get("publication_date", datetime.now().isoformat())
 
+        # ROOT-LEVEL FIX: Clean ArticleOutput BEFORE schema generation
+        # Issue: Schemas were generated from RAW Pydantic model with HTML tags BEFORE
+        # _build_content() ran its cleanup, causing schema.org / HTML mismatches
+        cleaned_output = HTMLRenderer._clean_article_output_for_schema(article_output) if article_output else None
+        
         # Generate JSON-LD schemas with error handling
         schemas_html = ""
-        if article_output:
+        if cleaned_output:
             try:
-                base_url = company_url.rsplit('/', 1)[0] if company_url else None
+                # ROOT-LEVEL FIX: Use company_url directly as base_url (don't strip path)
+                # Previous bug: rsplit('/') would turn "https://example.com" into "https:"
+                base_url = company_url.rstrip('/') if company_url else None
                 schemas = generate_all_schemas(
-                    output=article_output,
+                    output=cleaned_output,  # ← Use CLEANED output
                     company_data=company_data,
                     article_url=article_url,
                     base_url=base_url,
@@ -225,6 +281,16 @@ class HTMLRenderer:
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         }}
         
+        .comparison-table caption {{
+            caption-side: top;
+            font-weight: 600;
+            font-size: 1.1em;
+            color: var(--text);
+            padding: 0.75rem 0;
+            text-align: left;
+            margin-bottom: 0.5rem;
+        }}
+        
         .comparison-table th {{
             background: var(--bg-light);
             font-weight: 600;
@@ -324,12 +390,16 @@ class HTMLRenderer:
         # Build table HTML
         html_parts = []
         
-        # Table title (h3)
+        # Table title (h3) - for visual hierarchy
         if title:
             html_parts.append(f'<h3>{HTMLRenderer._escape_html(title)}</h3>')
         
         # Open table
         html_parts.append('<table class="comparison-table">')
+        
+        # ROOT-LEVEL FIX: Add <caption> for accessibility and SEO (Issue 10)
+        if title:
+            html_parts.append(f'  <caption>{HTMLRenderer._escape_html(title)}</caption>')
         
         # Table header
         html_parts.append('  <thead>')
@@ -385,8 +455,10 @@ class HTMLRenderer:
                 parts.append(f"<h2>{HTMLRenderer._escape_html(title_clean)}</h2>")
 
             if content and content.strip():
-                # Clean up useless patterns (also removes all [N] citations)
-                content_clean = HTMLRenderer._cleanup_content(content)
+                # Convert Markdown to HTML
+                content_html = HTMLRenderer._markdown_to_html(content)
+                # Clean up artifacts and patterns
+                content_clean = HTMLRenderer._cleanup_content(content_html)
                 parts.append(content_clean)
             
             # Inject first comparison table after section 2
@@ -436,8 +508,12 @@ class HTMLRenderer:
             q = item.get("question", "")
             a = item.get("answer", "")
             if q and a:
+                # Convert answer from Markdown to HTML
+                a_html = HTMLRenderer._markdown_to_html(a)
+                # Strip outer <p> tags if present (we'll add them in the template)
+                a_html = re.sub(r'^<p>(.*)</p>$', r'\1', a_html.strip(), flags=re.DOTALL)
                 items_html.append(
-                    f'<div class="faq-item"><h3>{HTMLRenderer._escape_html(q)}</h3><p>{a}</p></div>'
+                    f'<div class="faq-item"><h3>{HTMLRenderer._escape_html(q)}</h3><p>{a_html}</p></div>'
                 )
 
         if not items_html:
@@ -459,8 +535,12 @@ class HTMLRenderer:
             q = item.get("question", "")
             a = item.get("answer", "")
             if q and a:
+                # Convert answer from Markdown to HTML
+                a_html = HTMLRenderer._markdown_to_html(a)
+                # Strip outer <p> tags if present (we'll add them in the template)
+                a_html = re.sub(r'^<p>(.*)</p>$', r'\1', a_html.strip(), flags=re.DOTALL)
                 items_html.append(
-                    f'<div class="paa-item"><h3>{HTMLRenderer._escape_html(q)}</h3><p>{a}</p></div>'
+                    f'<div class="paa-item"><h3>{HTMLRenderer._escape_html(q)}</h3><p>{a_html}</p></div>'
                 )
 
         if not items_html:
@@ -481,7 +561,13 @@ class HTMLRenderer:
         if not lines:
             return ""
 
-        items_html = [f"<li>{HTMLRenderer._escape_html(line)}</li>" for line in lines]
+        # ROOT-LEVEL FIX: Strip [N]: prefix from citations (let <ol> handle numbering)
+        # Also ensure HTML entities are properly escaped
+        items_html = []
+        for line in lines:
+            # Remove [N]: prefix if present (Gemini sometimes adds it)
+            cleaned_line = re.sub(r'^\[\d+\]:\s*', '', line)
+            items_html.append(f"<li>{HTMLRenderer._escape_html(cleaned_line)}</li>")
 
         return f"""<section class="citations">
             <h2>Sources</h2>
@@ -522,6 +608,68 @@ class HTMLRenderer:
         # Clean up any leftover entities
         clean = clean.replace('&nbsp;', ' ').strip()
         return clean
+    
+    @staticmethod
+    def _clean_article_output_for_schema(article_output: ArticleOutput) -> ArticleOutput:
+        """
+        Clean ArticleOutput fields BEFORE passing to schema generation.
+        
+        CRITICAL FIX for Issue 1: Schema.org timing bug
+        
+        Problem: Schemas were generated from RAW Pydantic model with HTML tags
+        BEFORE _build_content() ran its cleanup, causing mismatches:
+        - Schema: "<p>Uber infrastructure</p>"
+        - HTML: "Uber infrastructure"
+        
+        Solution: Clean all text fields that go into schemas (headline, subtitle,
+        direct answer, intro, section titles, FAQ/PAA) BEFORE schema generation.
+        
+        This ensures schema.org and visible HTML contain identical content.
+        """
+        from copy import deepcopy
+        
+        # Deep copy to avoid mutating original
+        cleaned = deepcopy(article_output)
+        
+        # Clean all fields that appear in schemas
+        cleaned.Headline = HTMLRenderer._strip_html(cleaned.Headline)
+        cleaned.Subtitle = HTMLRenderer._strip_html(cleaned.Subtitle) if cleaned.Subtitle else ""
+        cleaned.Teaser = HTMLRenderer._strip_html(cleaned.Teaser)
+        cleaned.Direct_Answer = HTMLRenderer._strip_html(cleaned.Direct_Answer)
+        cleaned.Intro = HTMLRenderer._strip_html(cleaned.Intro)
+        
+        # Clean section titles (appear in breadcrumbs/TOC)
+        for i in range(1, 10):
+            title_field = f"section_{i:02d}_title"
+            title_value = getattr(cleaned, title_field, "")
+            if title_value:
+                setattr(cleaned, title_field, HTMLRenderer._strip_html(title_value))
+        
+        # Clean FAQ questions/answers (appear in FAQPage schema)
+        for i in range(1, 7):
+            q_field = f"faq_{i:02d}_question"
+            a_field = f"faq_{i:02d}_answer"
+            q_value = getattr(cleaned, q_field, "")
+            a_value = getattr(cleaned, a_field, "")
+            if q_value:
+                setattr(cleaned, q_field, HTMLRenderer._strip_html(q_value))
+            if a_value:
+                setattr(cleaned, a_field, HTMLRenderer._strip_html(a_value))
+        
+        # Clean PAA questions/answers
+        for i in range(1, 5):
+            q_field = f"paa_{i:02d}_question"
+            a_field = f"paa_{i:02d}_answer"
+            q_value = getattr(cleaned, q_field, "")
+            a_value = getattr(cleaned, a_field, "")
+            if q_value:
+                setattr(cleaned, q_field, HTMLRenderer._strip_html(q_value))
+            if a_value:
+                setattr(cleaned, a_field, HTMLRenderer._strip_html(a_value))
+        
+        logger.info("🔧 Cleaned ArticleOutput for schema generation (removed HTML tags)")
+        
+        return cleaned
 
     @staticmethod
     def _linkify_citations(content: str) -> str:
@@ -699,168 +847,107 @@ class HTMLRenderer:
     @staticmethod
     def _cleanup_content(content: str) -> str:
         """
-        Post-process content to remove useless patterns and standardize internal links.
+        Post-process HTML content with safety net cleanup.
         
-        Removes:
-        1. Standalone labels with only citations: <p><strong>Label:</strong> [N]</p>
-        2. Plain text labels with only citations: "Label: [N][M]"
-        3. Empty <p> tags or tags with only whitespace/punctuation
-        4. Duplicate consecutive paragraphs
+        Stage 2b (Comprehensive Content Transformation) should handle ALL content issues.
+        This method is now a SAFETY NET only for:
+        1. Emergency fallback: Remove any remaining [N] citations (if Stage 2b missed)
+        2. HTML-specific fixes: broken tags, escaped characters
+        3. Final whitespace cleanup
         
-        Fixes:
-        5. Double commas, periods, and other duplicate punctuation (Gemini typos)
-        6. AI language markers (em dashes, robotic phrases) - via _humanize_content
-        
-        Standardizes:
-        7. Internal links to use /magazine/ prefix
+        ⚠️ If this method catches issues, it means Stage 2b needs improvement.
         """
         if not content:
             return ""
         
-        # STEP 0: REMOVE ALL ACADEMIC CITATIONS [N] - SAFETY NET
-        # This is a HARD BLOCK to enforce inline-only citation style
-        # Removes: [1], [2], [1][2], [2][3], etc.
-        # Also removes <a href="#source-X">[N]</a> (linked academic citations)
-        content = re.sub(r'<a[^>]*href=["\']#source-\d+["\'][^>]*>\s*\[\d+\]\s*</a>', '', content)  # Linked [N]
-        content = re.sub(r'\[\d+\]', '', content)  # Standalone [N]
-        logger.info("🚫 Stripped all [N] academic citations (enforcing inline-only style)")
+        # ===========================================================================
+        # SAFETY NET 1: EMERGENCY CITATION REMOVAL (if Stage 2b missed any)
+        # ===========================================================================
+        # Stage 2b should have transformed [N] → inline attribution
+        # This is emergency fallback only
         
-        # STEP 0.5: REMOVE EMPTY LABEL PARAGRAPHS (Gemini bug)
-        # Matches: <p><strong>GitHub Copilot:</strong></p> (label with NO content after)
-        # Matches: <p><strong>Amazon Q Developer:</strong></p>
-        content = re.sub(r'<p>\s*<strong>[^<]+:</strong>\s*</p>', '', content)
-        logger.info("🧹 Removed empty label paragraphs")
+        remaining_citations = len(re.findall(r'\[\d+\]', content))
+        if remaining_citations > 0:
+            logger.warning(f"⚠️ SAFETY NET: Stage 2b missed {remaining_citations} citations, removing as fallback")
+            
+            # Pattern 1: Broken #source-N links (any anchor text)
+            content = re.sub(
+                r'<a[^>]*href=["\']#source-\d+["\'][^>]*>([^<]+)</a>',
+                r'\1',  # Keep only the anchor text
+                content
+            )
+            
+            # Pattern 2: Standalone [N]
+            content = re.sub(r'\[\d+\]', '', content)
+            
+            # Pattern 3: Multiple consecutive [N][M][K]
+            content = re.sub(r'(?:\[\d+\])+', '', content)
+            
+            # Pattern 4: [N] with spaces [ 1 ]
+            content = re.sub(r'\[\s*\d+\s*\]', '', content)
+            
+            # Cleanup orphaned commas from citation removal
+            content = re.sub(r',\s*,', ',', content)
+            content = re.sub(r'\s+,', ',', content)
+            content = re.sub(r',\s*\.', '.', content)
+        else:
+            logger.info("✅ No academic citations found (Stage 2b worked correctly)")
         
-        # STEP 0.6: FIX SENTENCE FRAGMENTS AT START OF PARAGRAPHS (Gemini bug)
-        # Gemini sometimes splits sentences incorrectly, creating fragments like:
-        # "<p>Some text</p><p>. However, more text</p>" → "<p>Some text. However, more text</p>"
-        # "<p>Some text</p><p>What is as these...</p>" → "<p>Some text What is as these...</p>"
-        # Pattern: </p><p> followed by punctuation or fragment word
-        content = re.sub(r'</p>\s*<p>(\s*[.,;:])', r'\1', content)  # Join punctuation fragments
-        content = re.sub(r'</p>\s*<p>(This is |What is |That\'s why |If you want |When you )', r' \1', content)  # Join phrase fragments
-        logger.info("🔧 Fixed sentence fragments at paragraph starts")
+        # ===========================================================================
+        # SAFETY NET 2: CHECK FOR EM DASHES (Stage 2b should have removed)
+        # ===========================================================================
+        em_dash_count = content.count('—') + content.count('&mdash;') + content.count('&#8212;')
+        if em_dash_count > 0:
+            logger.warning(f"⚠️ SAFETY NET: Stage 2b missed {em_dash_count} em dashes, removing as fallback")
+            content = content.replace('—', ', ')
+            content = content.replace('&mdash;', ', ')
+            content = content.replace('&#8212;', ', ')
+        else:
+            logger.info("✅ No em dashes found (Stage 2b worked correctly)")
         
-        # STEP 0.7: FIX GEMINI HALLUCINATION PATTERNS (context loss bugs)
-        # Gemini loses context mid-generation and outputs broken phrases:
-        # "You can aI code generation" → remove entire broken phrase
-        # "When you aI code generation" → remove entire broken phrase
-        # "What is aI code generation" → remove entire broken phrase
-        # "so you can of increased" → remove broken phrase
-        # "Here's this reality faces" → "This reality faces"
+        # ===========================================================================
+        # SAFETY NET 3: CHECK FOR STANDALONE LABELS (Stage 2b should have integrated)
+        # ===========================================================================
+        standalone_patterns = [
+            r'<p>\s*<strong>[^<]+:</strong>\s*</p>',
+            r'<p>\s*Key benefits include:\s*</p>',
+            r'<p>\s*Important considerations:\s*</p>',
+            r'<p>\s*Here are key points:\s*</p>',
+        ]
         
-        # Pattern 1: "You can/When you/What is" + lowercase "aI code" (context loss)
-        content = re.sub(r'<p>\s*(You can|When you|What is)\s+aI\s+code[^<]*</p>', '', content, flags=re.IGNORECASE)
-        content = re.sub(r'\b(You can|When you|What is)\s+aI\s+code[^.!?]*[.!?]?', '', content, flags=re.IGNORECASE)
+        for pattern in standalone_patterns:
+            matches = len(re.findall(pattern, content, flags=re.IGNORECASE))
+            if matches > 0:
+                logger.warning(f"⚠️ SAFETY NET: Stage 2b missed {matches} standalone labels, removing as fallback")
+                content = re.sub(pattern, '', content, flags=re.IGNORECASE)
         
-        # Pattern 2: "so you can of" (broken grammar)
-        content = re.sub(r'\bso you can of\b', '', content, flags=re.IGNORECASE)
+        # ===========================================================================
+        # HTML-SPECIFIC FIXES (NOT content transformation)
+        # ===========================================================================
         
-        # Pattern 3: "Here's this reality faces" → "This reality faces"
-        content = re.sub(r"Here's this (reality|scenario|situation)", r'This \1', content, flags=re.IGNORECASE)
+        # ===========================================================================
+        # MARKDOWN CONVERSION ARTIFACTS (from Markdown→HTML)
+        # ===========================================================================
         
-        # Pattern 4: Double question words "What is How" / "What is Why"
-        content = re.sub(r'<h2>What is (How|Why|What|When|Where)\b', r'<h2>\1', content, flags=re.IGNORECASE)
+        # Pattern 1: Double-wrapped paragraphs from Markdown parsing
+        content = re.sub(r'<p>\s*<p>([^<]+)</p>\s*</p>', r'<p>\1</p>', content)
+        content = re.sub(r'<p>\s*<p>', '<p>', content)
+        content = re.sub(r'</p>\s*</p>', '</p>', content)
         
-        # Pattern 5: Standalone "matters:" or "so you can:" labels
-        content = re.sub(r'<p>\s*(matters|so you can|if you want):\s*</p>', '', content, flags=re.IGNORECASE)
+        # Pattern 2: Empty list items from Markdown parsing
+        content = re.sub(r'<li>\s*</li>', '', content)
         
-        logger.info("🚨 Fixed Gemini hallucination patterns (context loss)")
+        # Pattern 3: Lists immediately after paragraphs (add spacing for readability)
+        content = re.sub(r'</p>\s*<ul>', '</p>\n<ul>', content)
+        content = re.sub(r'</p>\s*<ol>', '</p>\n<ol>', content)
         
-        # STEP 0.8: FIX KEYWORD LINE BREAKS (Issue D)
-        # Gemini sometimes creates paragraph breaks in the middle of keywords:
-        # "adoption of\n\nAI code review tools 2025\n\nhas..." → "adoption of AI code review tools 2025 has..."
-        # Pattern: Text + newlines + capitalized phrase + newlines + continuation
-        content = re.sub(r'(\w+)\s*\n{2,}\s*([A-Z][A-Za-z\s\d]+)\s*\n{2,}\s*([a-z])', r'\1 \2 \3', content)
-        logger.info("🔧 Fixed keyword line breaks")
-        
-        # STEP 0.9: FIX INCOMPLETE SENTENCES (Issue E)
-        # Detect and remove sentences that end mid-thought:
-        # "Ultimately," → remove entire paragraph
-        # "However," → remove if at end of paragraph
-        # Pattern: Paragraph ending with conjunction/comma and no continuation
-        content = re.sub(
-            r'<p>([^<]*?)(Ultimately|However|Moreover|Furthermore|Therefore|Additionally),?\s*</p>(?!\s*<p>)',
-            r'<p>\1</p>',
-            content,
-            flags=re.IGNORECASE
-        )
-        logger.info("🔧 Fixed incomplete trailing sentences")
-        
-        # STEP 1: Humanize language (remove AI markers)
-        content = HTMLRenderer._humanize_content(content)
-        
-        # Pattern 0: Fix duplicate punctuation (Gemini typos)
-        # Matches: ,, or .. or ;; or :: etc.
-        # Replace with single punctuation
+        # Fix duplicate punctuation (HTML rendering artifact)
         content = re.sub(r'([.,;:!?])\1+', r'\1', content)
         
-        # Pattern 1: Remove <p><strong>Label:</strong> LINKED_CITATIONS</p>
-        # Matches: <p><strong>Anything:</strong> <a...>[1]</a><a...>[2]</a></p>
-        # This catches linkified citations
-        content = re.sub(
-            r'<p>\s*<strong>[^<]+:</strong>\s*(?:<a[^>]*>\[\d+\]</a>\s*)+\s*</p>',
-            '',
-            content,
-            flags=re.IGNORECASE
-        )
+        # Remove empty or near-empty paragraphs (HTML structure cleanup)
+        content = re.sub(r'<p>\s*[.,;:\s]+\s*</p>', '', content)
         
-        # Pattern 2: Remove <p><strong>Label:</strong> RAW_CITATIONS</p>
-        # Matches: <p><strong>Anything:</strong> [1][2][3]</p>
-        # This catches citations before linkification
-        content = re.sub(
-            r'<p>\s*<strong>[^<]+:</strong>\s*(?:\[\d+\]\s*)+\s*</p>',
-            '',
-            content,
-            flags=re.IGNORECASE
-        )
-        
-        # Pattern 3: Remove plain text labels with only citations (no HTML)
-        # Matches: "Security Compliance: [2][3]" on its own line
-        content = re.sub(
-            r'^[A-Z][^:\n]{2,50}:\s*(?:\[\d+\]\s*)+$',
-            '',
-            content,
-            flags=re.MULTILINE
-        )
-        
-        # Pattern 3a: Remove standalone labels in list items (AGGRESSIVE)
-        # Matches: <li>Label: [N][M]</li> or <li><strong>Label:</strong> [N]</li>
-        content = re.sub(
-            r'<li>\s*(?:<strong>)?[^<:]+:(?:</strong>)?\s*(?:\[\d+\]\s*)+\s*</li>',
-            '',
-            content,
-            flags=re.IGNORECASE
-        )
-        
-        # Pattern 3b: Remove multi-word standalone labels (AGGRESSIVE)  
-        # Matches: "Essential Tooling Checklist: [2][3]" or "IDE-Integrated SAST: [2][3]"
-        # Works even with hyphens, spaces, and capital letters
-        content = re.sub(
-            r'\n\s*([A-Z][A-Za-z\s\-]{3,50}):\s*(?:\[\d+\]\s*)+\s*\n',
-            '\n',
-            content
-        )
-        
-        # Pattern 3c: Remove labels immediately after paragraph tags
-        # Matches: <p>Label: [N]</p> or <p>Multi Word Label: [N][M]</p>
-        content = re.sub(
-            r'<p>\s*([A-Z][^:<]{2,50}):\s*(?:\[\d+\]\s*)+\s*</p>',
-            '',
-            content,
-            flags=re.IGNORECASE
-        )
-        
-        # Pattern 4: Remove empty or near-empty paragraphs
-        # Matches: <p></p> or <p>   </p> or <p>.</p> or <p>,</p> or <p>. Also,,</p>
-        content = re.sub(
-            r'<p>\s*[.,;:\s]+\s*</p>',
-            '',
-            content
-        )
-        
-        # Pattern 5: Standardize internal links to /magazine/ format
-        # Matches: <a href="/slug"> or <a href="/blog/slug"> but NOT <a href="/magazine/
-        # Also NOT <a href="http or <a href="#
+        # Standardize internal links to /magazine/ format (HTML link normalization)
         def fix_internal_link(match):
             full_tag = match.group(0)
             href = match.group(1)
@@ -875,18 +962,17 @@ class HTMLRenderer:
             elif href.startswith('/'):
                 new_href = f'/magazine{href}'
             else:
-                new_href = f'/magazine/{href}'
+                return full_tag
             
-            return full_tag.replace(f'href="{href}"', f'href="{new_href}"')
+            return full_tag.replace(f'href="{href}"', f'href="{new_href}"').replace(f"href='{href}'", f"href='{new_href}'")
         
-        # Apply internal link standardization
-        content = re.sub(
-            r'<a\s+href="([^"]+)"([^>]*)>',
-            fix_internal_link,
-            content
-        )
+        content = re.sub(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>', fix_internal_link, content)
         
-        # Pattern 6: Remove duplicate consecutive paragraphs (exact duplicates)
+        # ===========================================================================
+        # FINAL WHITESPACE CLEANUP
+        # ===========================================================================
+        
+        # Remove duplicate consecutive paragraphs (exact duplicates)
         lines = content.split('\n')
         deduped = []
         prev_line = None
@@ -896,8 +982,10 @@ class HTMLRenderer:
                 prev_line = line.strip()
         content = '\n'.join(deduped)
         
-        # Pattern 7: Clean up multiple consecutive newlines
+        # Clean up multiple consecutive newlines
         content = re.sub(r'\n{3,}', '\n\n', content)
+        
+        logger.info("✅ Stage 10 safety net complete (HTML-only cleanup)")
         
         return content.strip()
 

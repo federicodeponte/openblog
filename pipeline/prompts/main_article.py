@@ -111,7 +111,21 @@ def get_main_article_prompt(
     # Use universal standards
     standards = UNIVERSAL_STANDARDS
 
-    prompt = f"""*** INPUT ***
+    prompt = f"""*** CRITICAL RULES (READ FIRST) ***
+
+🚨 ZERO TOLERANCE RULES - INSTANT REJECTION:
+
+1. NEVER use academic citations: [1], [2], [3], [1][2], etc.
+   ❌ FORBIDDEN: "Research shows 55% improvement [1][2]."
+   ✅ REQUIRED: "Research shows 55% improvement, according to GitHub's 2024 study."
+
+2. NEVER use em dashes (—) anywhere.
+   ❌ FORBIDDEN: "The tools—like Copilot—are popular."
+   ✅ REQUIRED: "The tools (like Copilot) are popular."
+
+IF YOU OUTPUT [N] OR EM DASHES, YOUR RESPONSE WILL BE REJECTED.
+
+*** INPUT ***
 Primary Keyword: {primary_keyword}
 Custom Instructions: {custom_instructions}
 Client Knowledge: {system_prompts_text}
@@ -145,10 +159,18 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 - **VALIDATION: Check every heading - no "What is + question word" patterns**
 
 **RULE 0A3: COMPLETE SENTENCES ONLY**
-- ❌ FORBIDDEN: End paragraphs with "Ultimately," or "However," or "Additionally,"
-- ❌ FORBIDDEN: Sentences ending mid-thought or with conjunction
+- ❌ FORBIDDEN: End paragraphs with "Ultimately," or "However," or "Additionally," without continuation
+- ❌ FORBIDDEN: Sentences ending mid-thought or with conjunction alone
+- ❌ FORBIDDEN: Orphaned periods at start of new paragraph: "</p><p>. Similarly,"
 - ✅ REQUIRED: Every sentence must be complete with subject, verb, and conclusion
+- ✅ REQUIRED: If using transitional words, they must START a complete sentence, not end one
 - **VALIDATION: Check last sentence of every paragraph - must end with period after complete thought**
+- **EXAMPLE VIOLATIONS:**
+  ```
+  ❌ "<p>The tools offer benefits. Ultimately,</p>"
+  ❌ "<p>Security matters. However,</p><p>Many teams ignore it.</p>"
+  ✅ "<p>The tools offer benefits. Ultimately, cost savings drive adoption.</p>"
+  ```
 
 **RULE 0A4: KEYWORD FORMATTING (NO LINE BREAKS)**
 - ❌ FORBIDDEN: Multi-line keyword emphasis that creates breaks:
@@ -192,40 +214,57 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    
    Count words before finalizing. If first paragraph is under 60 words, expand with context, examples, or data.
 
-5. **PARAGRAPH STRUCTURE + FEATURE LISTS** (CRITICAL - EXAMPLES REQUIRED):
+5. **PARAGRAPH STRUCTURE + FEATURE LISTS (MARKDOWN)** (CRITICAL - EXAMPLES REQUIRED):
 
    **RULE: EVERY paragraph = 60-100 words with 3-5 sentences. NO exceptions.**
+   **FORMAT: Pure Markdown (NO HTML tags). Separate paragraphs with blank lines.**
    
    ⛔ FORBIDDEN - Standalone labels (INSTANT REJECTION):
-   ```html
-   <p>Key features include:</p>
-   <p><strong>GitHub Copilot:</strong> [2][3]</p>
-   <p><strong>Amazon Q:</strong> [2][3]</p>
-   <p><strong>Tabnine:</strong> [2][3]</p>
+   ```markdown
+   Key features include:
+   
+   **GitHub Copilot:**
+   
+   **Amazon Q:**
+   
+   **Tabnine:**
    ```
    
-   ✅ CORRECT - Use proper HTML lists with full descriptions:
-   ```html
-   <p>Leading tools offer distinct capabilities tailored to different enterprise needs. 
-   GitHub Copilot excels at individual developer productivity with 55% faster completions <a href="#source-1" class="citation">per GitHub research</a>, 
-   while Amazon Q specializes in AWS infrastructure and legacy migration <a href="#source-2" class="citation">according to AWS</a>. Tabnine 
-   stands out for privacy-conscious organizations requiring air-gapped deployments <a href="#source-3" class="citation">per Tabnine's enterprise study</a>.</p>
-   <ul>
-     <li><strong>GitHub Copilot:</strong> Deep VS Code integration delivering 55% faster 
-     task completion, with Workspace feature for multi-file context management <a href="#source-1" class="citation">according to GitHub</a></li>
-     <li><strong>Amazon Q Developer:</strong> Autonomous Java version upgrades and AWS-native 
-     code generation, saving 4,500 developer years at Amazon internally <a href="#source-4" class="citation">per Amazon's case study</a></li>
-     <li><strong>Tabnine:</strong> Air-gapped deployment with zero data leakage, achieving 
-     32% productivity gains at Tesco without cloud uploads <a href="#source-6" class="citation">according to Tabnine</a></li>
-   </ul>
+   ⛔ FORBIDDEN - Lists that duplicate preceding paragraph verbatim (Issue 8):
+   ```markdown
+   The benefits are clear. Speed matters. Accuracy improves.
+   
+   - The benefits are clear  ← REJECTED: Word-for-word copy from paragraph
+   - Speed matters           ← REJECTED: Exact duplicate
+   - Accuracy improves       ← REJECTED: Verbatim repeat
+   ```
+   This is LAZY WRITING. If paragraph says "X, Y, Z", list items MUST provide ADDITIONAL specifics.
+   
+   ✅ CORRECT - List items as structured summaries with NEW information:
+   ```markdown
+   Leading tools offer distinct capabilities tailored to different enterprise needs. 
+   GitHub Copilot excels at individual developer productivity with **55% faster completions** 
+   per GitHub research, while Amazon Q specializes in AWS infrastructure and legacy migration 
+   according to AWS. Tabnine stands out for privacy-conscious organizations requiring 
+   air-gapped deployments per Tabnine's enterprise study.
+   
+   - **GitHub Copilot:** Deep VS Code integration delivering 55% faster task completion, with Workspace feature for multi-file context management according to GitHub
+   - **Amazon Q Developer:** Autonomous Java version upgrades and AWS-native code generation, saving 4,500 developer years at Amazon internally per Amazon's case study
+   - **Tabnine:** Air-gapped deployment with zero data leakage, achieving 32% productivity gains at Tesco without cloud uploads according to Tabnine
+   
+   This approach allows enterprises to select tools based on specific workflow requirements rather than market hype.
    ```
    
    **IF YOU WANT TO LIST FEATURES/TOOLS/BENEFITS:**
    1. Write lead-in paragraph (60-100 words) introducing the comparison
-   2. Use `<ul>` with `<li>` tags (NEVER standalone `<p>` labels)
-   3. Each list item = Label + full description (15-30 words) + citations
+   2. Use Markdown lists with `- ` or `* ` (NEVER standalone labels)
+   3. Each list item = **Label:** + full description (15-30 words) + natural attribution
+   4. **List items must provide ADDITIONAL details beyond the paragraph - NOT copy-paste text**
+   5. Follow list with closing paragraph to maintain narrative flow
    
-   VALIDATION: Any `<p><strong>Label:</strong> [N]</p>` pattern = INSTANT REJECTION.
+   VALIDATION: Any standalone "**Label:**" on its own line = INSTANT REJECTION.
+   VALIDATION: Any list that duplicates paragraph text verbatim = INSTANT REJECTION.
+   VALIDATION: Any HTML tags (<p>, <ul>, <li>, <strong>) = INSTANT REJECTION.
 
 6. **PRIMARY KEYWORD PLACEMENT** (CRITICAL):
    The exact phrase "{primary_keyword}" MUST appear **5-8 times TOTAL across the entire article** (headline + intro + all sections).
@@ -257,17 +296,18 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    - "5 Security Risks Every Team Must Address" (43 chars, action)
    - "Real-World ROI: Enterprise Case Studies" (41 chars, action)
 
-9. **Internal Links** (CRITICAL FORMAT): Include {standards["internal_links_min"]} throughout article. 
+9. **Internal Links (MARKDOWN FORMAT)** (CRITICAL): Include {standards["internal_links_min"]} throughout article. 
    **MANDATORY: Minimum 1 internal link every 2-3 sections.**
-   **ALL internal links MUST use `/magazine/{{slug}}` format.**
+   **ALL internal links MUST use `/magazine/{{slug}}` format in Markdown syntax.**
    
-   Format examples:
-   - `<a href="/magazine/ai-security-best-practices">AI Security Guide</a>`
-   - `<a href="/magazine/devops-automation">DevOps Automation</a>`
+   Markdown format examples:
+   - `[AI Security Guide](/magazine/ai-security-best-practices)`
+   - `[DevOps Automation](/magazine/devops-automation)`
    
    ⛔ FORBIDDEN:
-   - `<a href="/ai-security">...` (missing /magazine/)
-   - `<a href="/blog/devops">...` (wrong prefix)
+   - `[link](/ai-security)` (missing /magazine/)
+   - `[link](/blog/devops)` (wrong prefix)
+   - HTML syntax: `<a href="...">...</a>` (use Markdown instead)
    - Fewer than 3 internal links total (output will be REJECTED)
    
    ✅ REQUIRED:
@@ -277,8 +317,8 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    - **VALIDATION: Count internal links before submitting. Must be ≥ 3.**
    
    ✅ GOOD Examples (embedded naturally in sentences):
-   - "Organizations are <a href="/magazine/ai-governance">implementing governance frameworks</a> to manage risk."
-   - "Learn more about <a href="/magazine/security-best-practices">security scanning automation</a> in our guide."
+   - "Organizations are [implementing governance frameworks](/magazine/ai-governance) to manage risk."
+   - "Learn more about [security scanning automation](/magazine/security-best-practices) in our guide."
    - "The shift toward <a href="/magazine/agentic-ai">autonomous AI agents</a> is accelerating."
 
 10. **Case Studies** (MANDATORY - EXAMPLES REQUIRED):
@@ -673,11 +713,58 @@ Include in JSON output as:
   4. ✅ 5-8 lists distributed throughout article
   5. ✅ 2+ named case studies with company + metric + timeframe + 30+ words each
   6. ✅ Every paragraph is 60-100 words (3-5 sentences)
-  7. ✅ NO standalone labels like "<p><strong>Company:</strong> [N]</p>"
+  7. ✅ NO standalone labels like "**Company:**" on their own line
   8. ✅ Scan for "aI" → replace with "AI"
   9. ✅ Remove banned phrases: "seamlessly", "leverage", "cutting-edge"
+  10. ✅ ZERO HTML tags - pure Markdown only
 
-*** OUTPUT FORMAT ***
+*** MARKDOWN SYNTAX RULES ***
+
+⚠️ CRITICAL: ALL content fields must use PURE MARKDOWN. NO HTML tags allowed.
+
+**REQUIRED MARKDOWN SYNTAX:**
+
+1. **Paragraphs**: Separate with blank lines (no <p> tags)
+   ```markdown
+   First paragraph with natural flow.
+   
+   Second paragraph continues the narrative.
+   ```
+
+2. **Bold text**: Use **text** (NOT <strong>text</strong>)
+   ```markdown
+   This is **bold emphasis** for key points.
+   ```
+
+3. **Lists**: Use - or * for unordered lists (NO <ul><li> tags)
+   ```markdown
+   - First list item with full description
+   - Second list item with metrics
+   - Third list item with context
+   ```
+
+4. **Headings**: Use ## for H2, ### for H3 (NO <h2> tags)
+   - Note: Section titles are already H2 headings, don't add ## in content
+
+5. **Links**: 
+   - External: `[anchor text](https://url.com)` with natural attribution
+   - Internal: `[anchor text](/magazine/slug)`
+   ```markdown
+   According to [GitHub's 2024 study](https://github.com/research), developers saw 55% gains.
+   Learn more in our [AI security guide](/magazine/ai-security-best-practices).
+   ```
+
+6. **Emphasis**: Use *text* for italic (if needed, but prefer **bold**)
+
+**STRICTLY FORBIDDEN:**
+- ❌ HTML tags: <p>, <ul>, <li>, <strong>, <em>, <div>, <span>, <h2>
+- ❌ HTML anchor tags: <a href="...">...</a> (use Markdown [text](url))
+- ❌ Any HTML entity codes: &nbsp;, &mdash;, etc.
+- ❌ Inline styles or CSS
+
+**OUTPUT WILL BE REJECTED if ANY HTML tags are found in content fields.**
+
+*** OUTPUT FORMAT (PURE MARKDOWN) ***
 
 ⚠️ CRITICAL: This section shows REAL CONTENT EXAMPLES, not placeholder instructions.
 
@@ -688,64 +775,70 @@ Study these examples carefully - this is EXACTLY how your output should look.
 - ENSURE correct JSON output format
 - JSON must be valid and minified (no line breaks inside values)
 - No extra keys, comments, or process explanations
-- **WRITE NATURAL PARAGRAPHS**: 3-5 sentences per <p> tag, 60-100 words each
-- **USE PROPER LISTS**: When comparing features/tools, use <ul><li> with full descriptions
-- **NO STANDALONE LABELS**: Never write "<p><strong>Label:</strong> [N]</p>"
+- **WRITE IN PURE MARKDOWN**: Use blank lines to separate paragraphs, **bold** for emphasis, - for lists
+- **NO HTML TAGS**: NO <p>, <ul>, <li>, <strong>, <em>, <div>, <span> tags
+- **USE PROPER LISTS**: When comparing features/tools, use Markdown lists (- or *) with full descriptions
+- **NO STANDALONE LABELS**: Never write "**Label:** [N]" on its own line
 
-Valid JSON with REAL CONTENT EXAMPLES:
+Valid JSON with REAL MARKDOWN CONTENT EXAMPLES:
 
 ```json
 {{
   "Headline": "AI Code Tools 2025: Speed vs Security Trade-offs",
   "Subtitle": "How 84% of developers balance 55% productivity gains with 45% vulnerability rates",
-  "Teaser": "GitHub Copilot writes 41% of all code in 2025, but security teams warn of critical flaws. The question isn't whether to adopt AI—it's how to do so without compromising quality.",
-  "Direct_Answer": "The leading AI code generation tools in 2025—GitHub Copilot, Amazon Q Developer, and Tabnine—collectively increase developer velocity by up to 55% <a href=\"#source-1\" class=\"citation\">according to GitHub research</a> while requiring strict governance frameworks to mitigate the 45% vulnerability rate in AI-generated code <a href=\"#source-2\" class=\"citation\">per NIST security study</a>.",
-  "Intro": "<p>In late 2024, a senior engineer at a fintech firm watched an autonomous agent refactor a legacy codebase in hours—a task estimated to take weeks. This isn't science fiction; it's the new baseline for software engineering. As we enter 2025, 84% of developers integrate AI into daily workflows <a href=\"#source-1\" class=\"citation\">according to Stack Overflow</a>, but this speed introduces a paradox: we're building faster while potentially creating technical debt at scale.</p>",
+  "Teaser": "GitHub Copilot writes **41% of all code** in 2025, but security teams warn of critical flaws. The question isn't whether to adopt AI, it's how to do so without compromising quality.",
+  "Direct_Answer": "The leading AI code generation tools in 2025 (GitHub Copilot, Amazon Q Developer, and Tabnine) collectively increase developer velocity by up to **55%** according to GitHub research, while requiring strict governance frameworks to mitigate the **45% vulnerability rate** in AI-generated code per NIST security study.",
+  "Intro": "In late 2024, a senior engineer at a fintech firm watched an autonomous agent refactor a legacy codebase in hours, a task estimated to take weeks. This isn't science fiction; it's the new baseline for software engineering. As we enter 2025, **84% of developers** integrate AI into daily workflows according to Stack Overflow, but this speed introduces a paradox: we're building faster while potentially creating technical debt at scale.",
   "Meta_Title": "Best AI Coding Tools 2025: Copilot vs Q vs Tabnine",
   "Meta_Description": "Compare GitHub Copilot, Amazon Q, and Tabnine. See which AI tool delivers 55% faster coding with enterprise security.",
   "section_01_title": "What is Driving the AI Coding Revolution in 2025?",
-  "section_01_content": "<p>The landscape of software development has undergone a radical transformation, with AI code generation tools now accounting for 41% of all code written globally—a staggering increase from just 12% in 2023 [1]. This surge is driven by enterprises racing to reduce operational costs in a market projected to reach $30.1 billion by 2032 [2]. However, adoption has outpaced governance, creating a trust gap where 76% of developers use these tools daily, yet only 43% trust their accuracy [3]. This disconnect reveals the central challenge of 2025: balancing velocity with quality control.</p><p>Leading organizations are moving beyond simple autocomplete to full agentic workflows where AI manages complex refactoring autonomously [4]. Tools can now upgrade entire legacy applications with minimal human intervention—impossible just two years ago [5]. Yet this automation introduces a productivity paradox: time saved writing boilerplate is often lost debugging subtle AI-generated logic errors [6]. Successful teams treat AI as a force multiplier requiring disciplined oversight, not an autonomous replacement for engineering judgment.</p>",
+  "section_01_content": "The landscape of software development has undergone a radical transformation, with AI code generation tools now accounting for **41% of all code written globally**, a staggering increase from just 12% in 2023 according to GitHub's research. This surge is driven by enterprises racing to reduce operational costs in a market projected to reach **$30.1 billion by 2032**. However, adoption has outpaced governance, creating a trust gap where 76% of developers use these tools daily, yet only 43% trust their accuracy. This disconnect reveals the central challenge of 2025: balancing velocity with quality control.\n\nLeading organizations are moving beyond simple autocomplete to full agentic workflows where AI manages complex refactoring autonomously. Tools can now upgrade entire legacy applications with minimal human intervention, impossible just two years ago. Yet this automation introduces a productivity paradox: time saved writing boilerplate is often lost debugging subtle AI-generated logic errors. Successful teams treat AI as a force multiplier requiring disciplined oversight, not an autonomous replacement for engineering judgment.",
   "section_02_title": "How Do Leading AI Code Tools Compare?",
-  "section_02_content": "<p>The market has consolidated around three dominant platforms, each serving distinct enterprise needs. GitHub Copilot leads with 41.9% market share through deep VS Code integration, while Amazon Q Developer dominates AWS-native environments with autonomous migration capabilities [1][2]. Tabnine captures security-conscious organizations requiring air-gapped deployments that prevent data leakage [3]. Understanding these differences is critical for strategic tool selection.</p><ul><li><strong>GitHub Copilot:</strong> Delivers 55% faster task completion through VS Code integration, with Workspace feature managing multi-file contexts via natural language [4][5]</li><li><strong>Amazon Q Developer:</strong> Specializes in autonomous Java version upgrades (Java 8 to 17), saving Amazon internally 4,500 developer years and $260M across 30,000 applications in 2024-2025 [6][7]</li><li><strong>Tabnine:</strong> Offers air-gapped deployment with zero cloud uploads, achieving 32% productivity gains at Tesco while maintaining strict data privacy [8][9]</li></ul><p>Real-world implementations validate these capabilities. Shopify accelerated pull request completion by 40% within 90 days of deploying Copilot across their 500-person engineering team in Q2 2024, attributing success to reduced boilerplate generation that previously consumed 30% of sprint capacity [10][11]. This demonstrates that tool selection must align with specific organizational constraints rather than following market hype.</p>",
+  "section_02_content": "The market has consolidated around three dominant platforms, each serving distinct enterprise needs. GitHub Copilot leads with **41.9% market share** through deep VS Code integration, while Amazon Q Developer dominates AWS-native environments with autonomous migration capabilities. Tabnine captures security-conscious organizations requiring air-gapped deployments that prevent data leakage. Understanding these differences is critical for strategic tool selection.\n\n- **GitHub Copilot:** Delivers 55% faster task completion through VS Code integration, with Workspace feature managing multi-file contexts via natural language\n- **Amazon Q Developer:** Specializes in autonomous Java version upgrades (Java 8 to 17), saving Amazon internally 4,500 developer years and $260M across 30,000 applications in 2024-2025\n- **Tabnine:** Offers air-gapped deployment with zero cloud uploads, achieving 32% productivity gains at Tesco while maintaining strict data privacy\n\nReal-world implementations validate these capabilities. Shopify accelerated pull request completion by **40% within 90 days** of deploying Copilot across their 500-person engineering team in Q2 2024, attributing success to reduced boilerplate generation that previously consumed 30% of sprint capacity. This demonstrates that tool selection must align with specific organizational constraints rather than following market hype.",
   "section_03_title": "",
   "section_03_content": "",
   ...
 }}
 ```
 
-📋 **KEY PATTERNS TO FOLLOW:**
+📋 **KEY MARKDOWN PATTERNS TO FOLLOW:**
 
-1. **Feature Comparisons** - Use lead-in paragraph + `<ul>` list:
-   ```html
-   <p>Narrative paragraph introducing comparison [1][2].</p>
-   <ul>
-     <li><strong>Tool A:</strong> Full description with metrics [3][4]</li>
-     <li><strong>Tool B:</strong> Full description with metrics [5][6]</li>
-   </ul>
+1. **Feature Comparisons** - Use lead-in paragraph + Markdown list:
+   ```markdown
+   Narrative paragraph introducing comparison with context and metrics.
+   
+   - **Tool A:** Full description with metrics and specific capabilities
+   - **Tool B:** Full description with metrics and specific capabilities
+   - **Tool C:** Full description with metrics and specific capabilities
+   
+   Follow-up paragraph explaining implications or providing context.
    ```
 
 2. **Case Studies** - Embed in narrative paragraphs:
-   ```html
-   <p>Context sentence. Company X achieved Y% improvement by doing Z in Q1 2025, 
-   with detailed explanation of impact and specific metrics [1][2]. Additional 
-   context about why this matters for the industry.</p>
+   ```markdown
+   Context sentence about the industry. Company X achieved Y% improvement by doing Z in Q1 2025, 
+   with detailed explanation of impact and specific metrics according to their report. Additional 
+   context about why this matters for the industry and broader implications.
    ```
 
-3. **Every Paragraph** - 60-100 words, 3-5 sentences:
-   ```html
-   <p>Sentence 1 introducing concept [1]. Sentence 2 with data/example [2]. 
-   Sentence 3 explaining impact [3]. Sentence 4 adding context or bridging 
-   to next idea.</p>
+3. **Every Paragraph** - 60-100 words, 3-5 sentences (separate with blank lines):
+   ```markdown
+   Sentence 1 introducing concept with data. Sentence 2 with concrete example or case study. 
+   Sentence 3 explaining impact and why it matters. Sentence 4 adding context or bridging 
+   to next idea naturally.
+   
+   Next paragraph continues the narrative flow...
    ```
 
 VALIDATION RULES (Output will be REJECTED if violated):
-1. ❌ Any "<p><strong>Label:</strong> [N]</p>" pattern → REJECTED
+1. ❌ Any standalone "**Label:**" pattern on its own line → REJECTED
 2. ❌ Any paragraph under 60 words → REJECTED  
 3. ❌ Any case study without Company + Metric + Timeframe → REJECTED
 4. ❌ Any one-sentence paragraphs → REJECTED
-5. ✅ Must have 2+ case studies (30+ words each)
-6. ✅ Must have 60-100 word cohesive paragraphs throughout
-7. ✅ Use <ul><li> for feature lists, NEVER standalone <p> labels
+5. ❌ ANY HTML tags (<p>, <ul>, <li>, <strong>, <em>) → REJECTED
+6. ✅ Must have 2+ case studies (30+ words each)
+7. ✅ Must have 60-100 word cohesive paragraphs throughout
+8. ✅ Use Markdown lists (- or *) for feature lists, integrate labels naturally
 
 ALWAYS AT ANY TIMES STRICTLY OUTPUT IN THE JSON FORMAT. No extra keys or commentary."""
 
