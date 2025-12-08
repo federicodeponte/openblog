@@ -189,9 +189,9 @@ class GeminiClient:
         self.MODEL = model or os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
         
         # Get API key
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GEMINI_API_KEY")
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable required")
+            raise ValueError("GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_GEMINI_API_KEY environment variable required")
         
         # Initialize client with v1alpha API version for Gemini 3.0 Pro Preview
         try:

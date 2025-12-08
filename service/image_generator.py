@@ -1,6 +1,6 @@
 """
 Image Generation Service
-Generates blog images using Google GenAI SDK (gemini-2.5-flash-image).
+Generates blog images using Google GenAI SDK (gemini-3-pro-image-preview).
 Uploads to Google Drive and makes publicly viewable.
 
 v3: Uses Google GenAI SDK directly (consistent with blog generation)
@@ -57,12 +57,12 @@ class ImageGenerationResponse:
 class ImageGenerator:
     """
     Handles blog image generation using:
-    - Google GenAI SDK (gemini-2.5-flash-image) - Direct SDK, consistent with blog generation
+    - Google GenAI SDK (gemini-3-pro-image-preview) - Latest Nano Banana Pro model with professional-grade features
     - Google Drive for storage
     """
 
     # Google GenAI SDK config
-    IMAGE_MODEL = "gemini-2.5-flash-image"  # Google's image generation model
+    IMAGE_MODEL = "gemini-3-pro-image-preview"  # Latest Gemini 3 Pro Image (Nano Banana Pro) model
     
     # Drive folder structure: Project → Content Output → Graphics (Final)
     CONTENT_OUTPUT_FOLDER = "04 - Content Output"
@@ -74,9 +74,9 @@ class ImageGenerator:
 
     def __init__(self):
         # Get Gemini API key (same as blog generation)
-        self.api_key = os.getenv("GEMINI_API_KEY")
+        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GEMINI_API_KEY")
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable required")
+            raise ValueError("GOOGLE_API_KEY, GEMINI_API_KEY, or GOOGLE_GEMINI_API_KEY environment variable required")
         
         # Initialize Google GenAI client
         try:
@@ -385,7 +385,7 @@ class ImageGenerator:
 
     async def _generate_image(self, prompt: str, max_retries: int = 3) -> bytes:
         """
-        Generate image using Google GenAI SDK (gemini-2.5-flash-image).
+        Generate image using Google GenAI SDK (gemini-3-pro-image-preview).
         Includes retry logic with exponential backoff.
         """
         last_error = None
@@ -505,21 +505,37 @@ class ImageGenerator:
                         if image_data:
                             # Check if it's already bytes or needs decoding
                             if isinstance(image_data, bytes):
-                                # Already bytes - check if it's valid PNG
-                                if len(image_data) > 100 and image_data[:8] == b'\x89PNG\r\n\x1a\n':
-                                    logger.info(f"Found valid PNG image data ({len(image_data)} bytes)")
-                                    return image_data
+                                # Already bytes - check if it's valid image format
+                                if len(image_data) > 100:
+                                    # Check for PNG signature
+                                    if image_data[:8] == b'\x89PNG\r\n\x1a\n':
+                                        logger.info(f"Found valid PNG image data ({len(image_data)} bytes)")
+                                        return image_data
+                                    # Check for JPEG signature
+                                    elif image_data[:3] == b'\xff\xd8\xff':
+                                        logger.info(f"Found valid JPEG image data ({len(image_data)} bytes)")
+                                        return image_data
+                                    else:
+                                        logger.warning(f"Image data doesn't match PNG or JPEG format (first bytes: {image_data[:20]})")
                                 else:
-                                    logger.warning(f"Image data is bytes but doesn't look like valid PNG (first bytes: {image_data[:20]})")
+                                    logger.warning(f"Image data too small ({len(image_data)} bytes)")
                             elif isinstance(image_data, str):
                                 # Try base64 decode
                                 try:
                                     decoded = base64.b64decode(image_data)
-                                    if len(decoded) > 100 and decoded[:8] == b'\x89PNG\r\n\x1a\n':
-                                        logger.info(f"Found base64-encoded PNG image ({len(decoded)} bytes)")
-                                        return decoded
+                                    if len(decoded) > 100:
+                                        # Check for PNG signature
+                                        if decoded[:8] == b'\x89PNG\r\n\x1a\n':
+                                            logger.info(f"Found base64-encoded PNG image ({len(decoded)} bytes)")
+                                            return decoded
+                                        # Check for JPEG signature
+                                        elif decoded[:3] == b'\xff\xd8\xff':
+                                            logger.info(f"Found base64-encoded JPEG image ({len(decoded)} bytes)")
+                                            return decoded
+                                        else:
+                                            logger.warning(f"Decoded data doesn't match PNG or JPEG format")
                                     else:
-                                        logger.warning(f"Decoded data doesn't look like valid PNG")
+                                        logger.warning(f"Decoded data too small ({len(decoded)} bytes)")
                                 except Exception as e:
                                     logger.warning(f"Failed to decode base64: {e}")
                     

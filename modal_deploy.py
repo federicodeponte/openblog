@@ -3,7 +3,7 @@ Modal deployment configuration for blog-writer service
 
 v3: Direct Google GenAI SDK for Gemini calls (no external dependencies)
     - Uses google-genai package with built-in Google Search grounding
-    - Image generation via Google GenAI SDK (gemini-2.5-flash-image)
+    - Image generation via Google GenAI SDK (gemini-3-pro-image-preview)
 """
 
 import modal

@@ -7,7 +7,7 @@ OpenBlog has **two image generation pipelines**:
 ### 1. **Gemini Image Creator** (DEFAULT) ✅
 - **File:** `service/image_generator.py`
 - **API:** `POST /generate-image`
-- **Technology:** Google GenAI SDK (`gemini-2.5-flash-image`)
+- **Technology:** Google GenAI SDK (`gemini-3-pro-image-preview`)
 - **Output:** AI-generated images
 - **Use case:** Blog hero images, topic visualizations
 - **Status:** **Production default**
