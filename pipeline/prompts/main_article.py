@@ -123,6 +123,12 @@ Target Market: {validated_country}
 Competitors: {competitors_str}
 Date: {current_date}
 
+*** CRITICAL: USE 2025 DATA ***
+🕒 **IMPORTANT**: Today's date is {current_date}. When citing reports, studies, or statistics:
+- Use "2025 report", "2025 data", "2025 study" NOT "2024" 
+- Reference current year context: "As we enter 2025", "In 2025"
+- Avoid outdated temporal references
+
 *** TASK ***
 You are writing a long-form blog post in {company_name}'s voice, fully optimized for LLM discovery, on the topic defined by **Primary Keyword**.
 
@@ -137,6 +143,17 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 - If count < 5: Add more natural mentions in section content
 - If count > 8: Replace some with semantic variations (keep 5-8 exact matches)
 - **THIS IS A HARD REQUIREMENT - ZERO TOLERANCE - OUTPUT WILL BE REJECTED IF VIOLATED**
+
+*** SOURCES VERIFICATION (MANDATORY) ***
+
+🔍 **BEFORE WRITING**: Use your web search tools to verify ALL URLs you plan to cite.
+🚨 **ZERO TOLERANCE**: Any hallucinated or unverified URLs will result in REJECTION.
+
+**REQUIRED VERIFICATION PROCESS**:
+1. Search for the specific company/study you want to reference
+2. Verify the exact URL exists and returns 200 OK status
+3. If no specific page found, use verified company homepage only
+4. Record format: `[1]: https://verified-url.com – 8-15 word description`
 
 *** CONTENT RULES ***
 
@@ -165,9 +182,9 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
   6. Verify final count is 5-8 before submitting
 - **OUTPUT WILL BE AUTOMATICALLY REJECTED IF PRIMARY KEYWORD COUNT IS NOT 5-8 OR IF KEYWORD IS MISSING FROM HEADLINE/DIRECT_ANSWER/INTRO**
 
-**RULE 0C: FIRST PARAGRAPH LENGTH**
-- First <p> paragraph MUST be 40-50 words (3-5 sentences) - same as all paragraphs
-- **VALIDATION: Count words in first <p> before submitting. Must be 40-50 words. Paragraphs exceeding 50 words will be REJECTED.**
+**RULE 0C: FIRST PARAGRAPH IMPACT**
+- First <p> paragraph should be engaging and substantial (2-4 sentences typically)
+- **FOCUS: Create a compelling hook that draws readers in with natural flow**
 
 **RULE 0D: NO ROBOTIC PHRASES**
 - ❌ FORBIDDEN: "Here's how", "Here's what", "Key points:", "Important considerations:", "Key benefits include:"
@@ -196,11 +213,9 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    - Direct_Answer MUST include at least 1 conversational phrase (e.g., "you can", "here's", "what is", "how to")
    - This counts toward your mandatory 12+ conversational phrases total
 
-4. Intro: **40-50 words (target: 40-50 words). Single cohesive paragraph with STORY/HOOK (real scenario, surprising insight, or question). Do NOT include bullet lists in Intro.**
+4. Intro: **Engaging opening paragraph with STORY/HOOK (real scenario, surprising insight, or question). Do NOT include bullet lists in Intro.**
 
-   **CRITICAL: The first <p> paragraph of your article MUST be 40-50 words (3-5 sentences). This is the opening hook and must be substantial.**
-   
-   Count words before finalizing. Target is 40-50 words per paragraph. Paragraphs exceeding 50 words will be REJECTED.
+   **FOCUS: Create a compelling opening that immediately engages the reader with natural, conversational flow (typically 2-4 sentences).**
    
    **🚨 CONVERSATIONAL PHRASE REQUIREMENT:**
    - Intro paragraph MUST include 2-3 conversational phrases (e.g., "you'll find", "here's", "when you", "that's why")
@@ -209,17 +224,18 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 
 5. **PARAGRAPH STRUCTURE + FEATURE LISTS** (CRITICAL - EXAMPLES REQUIRED):
 
-   **RULE: EVERY paragraph = 40-50 words (3-5 sentences). NO exceptions.**
+   **NATURAL PARAGRAPH VARIETY FOR BETTER READABILITY:**
    
-   🚨 **CRITICAL: Paragraphs exceeding 50 words will be REJECTED.**
+   🎯 **CREATE ENGAGING FLOW WITH VARIED PARAGRAPH LENGTHS:**
    
-   - Target: 40-50 words per paragraph (strict limit: paragraphs exceeding 50 words will be REJECTED)
-   - Articles with paragraphs exceeding 50 words will be REJECTED
-   - Keep paragraphs scannable and digestible for better readability
-   - This applies to ALL paragraphs including first paragraph, section paragraphs, and lead-in paragraphs
+   - **Short paragraphs** (1-2 sentences) for emphasis and impact
+   - **Medium paragraphs** (2-4 sentences) for main points and explanations  
+   - **Longer paragraphs** (4-6 sentences) for complex concepts when needed
+   - **Single sentence paragraphs** for dramatic effect or transitions
+   - Keep content scannable and mobile-friendly with natural variety
    
-   ✅ GOOD: 40-50 words per paragraph (scannable, digestible)
-   ❌ REJECTED: Any paragraph over 50 words (too dense, poor readability)
+   ✅ GOOD: Natural variety in paragraph lengths (engaging, readable)
+   ❌ AVOIDED: Monotonous uniform paragraphs (robotic, boring)
    
    ⛔ FORBIDDEN - Standalone labels (INSTANT REJECTION):
    ```html
@@ -246,7 +262,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    ```
    
    **IF YOU WANT TO LIST FEATURES/TOOLS/BENEFITS:**
-   1. Write lead-in paragraph (40-50 words) introducing the comparison
+   1. Write natural lead-in paragraph introducing the comparison  
    2. Use `<ul>` with `<li>` tags (NEVER standalone `<p>` labels)
    3. Each list item = Label + full description (15-30 words) + citations
    
@@ -415,8 +431,17 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
     - "...saving $260 million <a href="#source-2" class="citation">according to AWS</a>."
     - "...45% vulnerability rate <a href="#source-3" class="citation">found by NIST</a>."
 
-11. **HTML Lists** (IMPORTANT for scannability):
-    Include 5-8 lists throughout article. Minimum 1 list every 2 sections.
+11. **HTML Lists** (🚨 CRITICAL REQUIREMENT - OUTPUT WILL BE REJECTED WITHOUT LISTS):
+    
+    **MANDATORY: Include EXACTLY 5-8 lists throughout article. Minimum 1 list every 2 sections.**
+    
+    🎯 **LISTS ARE ESSENTIAL FOR:**
+    - Mobile readability and user engagement
+    - Breaking up dense text blocks  
+    - Highlighting key features and benefits
+    - Improving content scannability
+    
+    **VALIDATION: Articles with fewer than 5 lists will be AUTOMATICALLY REJECTED.**
     
     **USE NUMBERED LISTS (`<ol>`) WHEN:**
     - Listing ranked items: "5 best tools", "top 3 platforms", "10 ways to..."
@@ -454,9 +479,9 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
     cycles accelerate by 30%, code review burden decreases by 25%, and automated testing 
     catches 15% more bugs before production <a href="#source-1" class="citation">according to industry research</a>.</p>
     <ul>
-      <li><strong>Speed:</strong> 30% faster development cycles with automated boilerplate</li>
-      <li><strong>Efficiency:</strong> 25% reduction in manual code review time</li>
-      <li><strong>Quality:</strong> 15% improvement in pre-production bug detection rates</li>
+      <li><strong>Speed:</strong> Automated boilerplate generation eliminates repetitive typing, letting developers focus on complex business logic instead of syntax</li>
+      <li><strong>Efficiency:</strong> Context-aware suggestions reduce time spent on documentation lookups and API reference searches</li>
+      <li><strong>Quality:</strong> Built-in best practices help junior developers write cleaner code from day one, reducing technical debt</li>
     </ul>
     ```
     
@@ -680,7 +705,7 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
    ```
    
    **FORMULA:**
-   1. Write a complete paragraph (40-50 words) introducing the topic
+   1. Write a complete paragraph introducing the topic naturally
    2. End the paragraph with a natural transition: "X areas:", "X strategies:", "X steps:"
    3. Follow immediately with `<ul>` or `<ol>` (NO standalone `<p>Key points:</p>`)
    
@@ -741,7 +766,9 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 • Priority order: 1) .gov/.edu 2) .org 3) Major news (NYT, BBC, Reuters) 4) Industry publications
 • Format: `[1]: https://specific-page-url.com/research/2025 – 8-15 word description`
 • **CRITICAL**: Use SPECIFIC PAGE URLs, NOT domain homepages
-• Rejected: Personal blogs, social media, unknown domains, AI-generated content
+• **🚨 ANTI-HALLUCINATION WARNING**: ONLY cite URLs you have VERIFIED exist through web search
+• **⚠️ URL VERIFICATION REQUIRED**: Before citing any URL, confirm it exists and is accessible
+• Rejected: Personal blogs, social media, unknown domains, AI-generated content, HALLUCINATED URLs
 
 ✅ GOOD Examples:
 ```
@@ -822,11 +849,11 @@ Include in JSON output as:
 
 • **HTML Tags**: Keep all tags intact (<p>, <ul>, <ol>, <h2>, <h3>, <strong>, <a>)
 
-• **NO Fragmentation** (OUTPUT WILL BE REJECTED IF VIOLATED):
-  - NEVER create one-sentence-per-paragraph structure
+• **NATURAL CONTENT FLOW** (CRITICAL FOR READABILITY):
+  - CREATE varied paragraph lengths for engaging rhythm
   - NEVER create standalone labels like "<p><strong>Tool:</strong> [N]</p>"
-  - NEVER create empty paragraphs with only company names and citations
-  - EVERY <p> tag must contain 40-50 words (3-5 complete sentences) - paragraphs exceeding 50 words will be REJECTED
+  - NEVER create empty paragraphs with only company names and citations  
+  - USE natural paragraph variety: short (1-2 sentences), medium (2-4 sentences), longer (4-6 sentences) as context requires
 
 • **Meta Requirements**:
   - Meta_Title: ≤55 characters, SEO-optimized
@@ -855,12 +882,29 @@ Include in JSON output as:
   7. ✅ 3-5 internal links present in content
   8. ✅ 5-8 lists distributed throughout article
   9. ✅ 2+ named case studies with company + metric + timeframe + 30+ words each
-  10. ✅ Every paragraph is 40-50 words (3-5 sentences) - paragraphs exceeding 50 words will be REJECTED
+  10. ✅ Natural paragraph variety for engaging flow and mobile readability
   11. ✅ NO standalone labels like "<p><strong>Company:</strong> [N]</p>"
-  12. ✅ **CITATION QUALITY (CRITICAL)**: All citations MUST be from real, working sources:
-     - NO fake/placeholder URLs (example.com, etc.)
-     - NO 404 error pages or broken links
-     - Use real, accessible websites
+  12. ✅ **CITATION QUALITY (CRITICAL - ZERO TOLERANCE FOR URL HALLUCINATION)**:
+     
+     🚨 **MANDATORY URL VERIFICATION RULES**:
+     - ONLY use URLs you can VERIFY exist through your web search tools
+     - NEVER invent or guess URL paths (like /reports/2024/ or /whitepaper-download/)
+     - NEVER create plausible-sounding URLs without verification
+     - If you can't find a specific report/study URL, use the company's main domain
+     
+     ✅ **REQUIRED PROCESS**:
+     1. Search for the specific study/report/data you want to cite
+     2. VERIFY the exact URL exists and is accessible
+     3. ONLY cite URLs you have confirmed through search
+     4. If no specific URL found, use homepage: "https://company.com"
+     
+     ❌ **FORBIDDEN URL PATTERNS**:
+     - NO "/reports/", "/studies/", "/whitepapers/" unless verified
+     - NO year-based paths like "/2024/", "/2025/" unless confirmed
+     - NO document-specific paths like "/pdf/", "/download/" unless verified
+     - NO subdirectory guessing (marketing.company.com, research.company.com)
+     
+     🔍 **WHEN IN DOUBT**: Use company homepage (https://company.com) instead of guessing paths
   13. ✅ **CITATION COUNT**: 15-20 sources required
   14. ✅ **FAQ REQUIREMENT (CRITICAL)**: At least 5 FAQ items generated (faq_01_question through faq_05_question must be non-empty)
   15. ✅ **PAA REQUIREMENT (CRITICAL)**: At least 3 PAA items generated (paa_01_question through paa_03_question must be non-empty)
@@ -878,8 +922,8 @@ Study these examples carefully - this is EXACTLY how your output should look.
 - ENSURE correct JSON output format
 - JSON must be valid and minified (no line breaks inside values)
 - No extra keys, comments, or process explanations
-- **WRITE NATURAL PARAGRAPHS**: 3-5 sentences per <p> tag, 40-50 words each (strict limit: paragraphs exceeding 50 words will be REJECTED)
-- **USE PROPER LISTS**: When comparing features/tools, use <ul><li> with full descriptions
+- **WRITE NATURAL PARAGRAPHS**: Vary paragraph lengths for engaging flow - short (1-2 sentences), medium (2-4 sentences), longer (4-6 sentences) as content requires
+- **🚨 MANDATORY LISTS (5-8 REQUIRED)**: ALWAYS include multiple <ul><li> and <ol><li> lists throughout your article - articles without lists will be REJECTED
 - **NO STANDALONE LABELS**: Never write "<p><strong>Label:</strong> [N]</p>"
 - **🚨 CONVERSATIONAL PHRASES REQUIRED**: You MUST include 12+ conversational phrases ("you can", "here's", "what is", "how to", "when you", etc.) throughout your article - count them before submitting
 
@@ -958,24 +1002,23 @@ Valid JSON with REAL CONTENT EXAMPLES:
    context about why this matters for the industry.</p>
    ```
 
-3. **Every Paragraph** - 40-50 words, 3-5 sentences:
+3. **Natural Paragraphs** - Varied lengths for engaging flow:
    ```html
-   <p>Sentence 1 introducing concept [1]. Sentence 2 with data/example [2]. 
-   Sentence 3 explaining impact [3]. Sentence 4 adding context or bridging 
-   to next idea.</p>
+   <p>Varied length paragraphs create natural rhythm. Use short paragraphs for impact.</p>
+   
+   <p>Medium paragraphs work well for explanations with supporting details and examples. They provide enough space for a complete thought while remaining scannable.</p>
    ```
 
 VALIDATION RULES (Output will be REJECTED if violated):
 1. ❌ **PRIMARY KEYWORD COUNT: "{primary_keyword}" appears 0-4 or 9+ times → REJECTED** (MUST be 5-8)
 2. ❌ Any "<p><strong>Label:</strong> [N]</p>" pattern → REJECTED
-3. ❌ Any paragraph under 40 words → REJECTED  
-4. ❌ Any paragraph over 50 words → REJECTED (target: 40-50 words)
+3. ❌ **MISSING LISTS: Less than 5-8 lists throughout article → REJECTED** (MUST include varied list structures)
+4. ❌ **MONOTONOUS PARAGRAPHS: All paragraphs same length → REJECTED** (MUST vary paragraph lengths naturally)
 5. ❌ Any case study without Company + Metric + Timeframe → REJECTED
-6. ❌ Any one-sentence paragraphs → REJECTED
 7. ❌ **FAQ COUNT: Less than 5 FAQ items generated → REJECTED** (MUST have faq_01 through faq_05 with questions and answers)
 8. ❌ **PAA COUNT: Less than 3 PAA items generated → REJECTED** (MUST have paa_01 through paa_03 with questions and answers)
 9. ✅ Must have 2+ case studies (30+ words each)
-10. ✅ Must have 40-50 word cohesive paragraphs throughout (all paragraphs, including first paragraph and lead-in paragraphs)
+10. ✅ Must have natural paragraph variety for engaging flow and readability
 11. ✅ Use <ul><li> for feature lists, NEVER standalone <p> labels
 
 ALWAYS AT ANY TIMES STRICTLY OUTPUT IN THE JSON FORMAT. No extra keys or commentary."""

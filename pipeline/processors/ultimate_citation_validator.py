@@ -433,7 +433,10 @@ class SmartCitationValidator:
             Alternative URL if found, None otherwise
         """
         if not self.gemini_client:
+            logger.warning("No Gemini client available for alternative source search")
             return None
+        
+        logger.info(f"🧠 Calling Gemini to find alternative for: {title[:100]}...")
             
         try:
             # Create search query from title

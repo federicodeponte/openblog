@@ -129,6 +129,9 @@ class CitationsStage(Stage):
         # ULTIMATE VALIDATION: Use enhanced citation validator
         if self.config.enable_citation_validation and context.company_data.get("company_url"):
             logger.info("🔍 Starting ultimate citation validation...")
+            logger.info(f"    enable_citation_validation = {self.config.enable_citation_validation}")
+            logger.info(f"    company_url = {context.company_data.get('company_url')}")
+            logger.info(f"    Gemini client will be initialized for citation validation")
             validated_list = await self._validate_citations_ultimate(
                 citation_list, context
             )
@@ -421,7 +424,7 @@ class CitationsStage(Stage):
         
         # Extract company and competitor information
         company_url = context.company_data.get("company_url", "")
-        competitors = context.sitemap_data.get("competitors", [])
+        competitors = getattr(context, 'sitemap_data', {}).get("competitors", [])
         language = context.language or "en"
         
         # Validate all citations

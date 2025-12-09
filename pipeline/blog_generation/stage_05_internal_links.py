@@ -176,10 +176,12 @@ class InternalLinksStage(Stage):
         if batch_siblings:
             logger.info(f"Prioritizing {len(batch_siblings)} batch siblings for cross-linking")
             for idx, sibling in enumerate(batch_siblings):
-                sibling_url = sibling.get("slug", "")
+                sibling_url = sibling.get("url", "") or sibling.get("slug", "")  # Support both "url" and "slug" keys
                 sibling_title = sibling.get("title", "")
                 sibling_keyword = sibling.get("keyword", "")
+                sibling_description = sibling.get("description", "")
                 if not sibling_url:
+                    logger.warning(f"Skipping sibling {idx+1}: no URL/slug provided")
                     continue
                 
                 # Standardize URL format: always use /magazine/{slug}
@@ -190,6 +192,8 @@ class InternalLinksStage(Stage):
                 relevance = self._calculate_relevance(sibling_keyword or sibling_title, topics)
                 # Boost batch siblings slightly
                 relevance = min(relevance + 2, 10)
+                
+                logger.info(f"  Adding batch sibling {idx+1}: '{title}' → {url} (relevance={relevance})")
                 
                 link_list.add_link(
                     url=url,

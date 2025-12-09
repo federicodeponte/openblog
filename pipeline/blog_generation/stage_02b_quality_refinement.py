@@ -198,6 +198,11 @@ class QualityRefinementStage(Stage):
         ai_marker_issues = self._check_ai_markers(data)
         issues.extend(ai_marker_issues)
         
+        # Issue 4: Academic citations (needs conversion to natural language)
+        academic_citation_issue = self._check_academic_citations(data)
+        if academic_citation_issue:
+            issues.append(academic_citation_issue)
+        
         return issues
     
     def _check_keyword_density(
@@ -339,6 +344,48 @@ class QualityRefinementStage(Stage):
         
         return issues
     
+    def _check_academic_citations(self, data: ArticleOutput) -> Optional[QualityIssue]:
+        """
+        Check for academic citations [1], [2], [1][2] that need conversion to natural language.
+        """
+        import re
+        
+        # Get all content fields
+        content_fields = ["Headline", "Direct_Answer", "Intro"]
+        for i in range(1, 10):
+            content_fields.extend([
+                f"section_{i:02d}_title",
+                f"section_{i:02d}_content"
+            ])
+        
+        # Check for academic citation patterns [N], [N][M], etc.
+        academic_patterns = [
+            r'\[\d+\]',  # [1], [2], etc.
+            r'\[\d+\]\[\d+\]',  # [1][2], [2][3], etc.
+            r'\[\d+\]\[\d+\]\[\d+\]',  # [1][2][3], etc.
+        ]
+        
+        found_citations = []
+        for field in content_fields:
+            content = str(getattr(data, field, ""))
+            if content:
+                for pattern in academic_patterns:
+                    matches = re.findall(pattern, content)
+                    if matches:
+                        found_citations.extend([(field, match) for match in matches])
+        
+        if found_citations:
+            return QualityIssue(
+                issue_type="academic_citations",
+                severity="critical",
+                description=f"Found {len(found_citations)} academic citations [N] that must be converted to natural language inline links",
+                current_value=len(found_citations),
+                target_value=0,
+                field="all_content"
+            )
+        
+        return None
+    
     def _issues_to_rewrites(
         self,
         issues: List[QualityIssue],
@@ -417,6 +464,19 @@ class QualityRefinementStage(Stage):
                     max_similarity=0.95,
                     context={
                         "markers_found": markers_found
+                    }
+                ))
+            
+            elif issue.issue_type == "academic_citations":
+                rewrites.append(RewriteInstruction(
+                    target="all_content",
+                    instruction="Convert academic citations [1], [2], [1][2] to natural language inline links. Replace [N] with contextual phrases like 'according to [source]', 'per [study]', '[company]'s research shows'. Format as: <a href=\"#source-N\" class=\"citation\">according to GitHub</a>",
+                    mode=RewriteMode.QUALITY_FIX,
+                    preserve_structure=True,
+                    min_similarity=0.70,
+                    max_similarity=0.90,
+                    context={
+                        "academic_citations_found": issue.current_value
                     }
                 ))
         

@@ -555,8 +555,13 @@ class HTMLRenderer:
                 url = match.group(2).strip()
                 description = match.group(3).strip()
                 
+                # Clean description of any HTML tags before escaping
+                clean_description = re.sub(r'<[^>]+>', '', description)  # Remove any HTML tags
+                clean_description = re.sub(r'&[^;]+;', '', clean_description)  # Remove HTML entities
+                clean_description = clean_description.strip()
+                
                 # Create clickable link to the actual source URL
-                link_html = f'<a href="{HTMLRenderer._escape_attr(url)}" target="_blank" rel="noopener noreferrer">{HTMLRenderer._escape_html(description)}</a>'
+                link_html = f'<a href="{HTMLRenderer._escape_attr(url)}" target="_blank" rel="noopener noreferrer">{HTMLRenderer._escape_html(clean_description)}</a>'
                 items_html.append(f'<li id="source-{num_str}">{link_html}</li>')
             else:
                 # Fallback: if format doesn't match, render as-is (escaped)
@@ -1107,45 +1112,60 @@ class HTMLRenderer:
         content = re.sub(r'\[\d+\]', '', content)  # Standalone [N]
         logger.info("🚫 Stripped all [N] academic citations (enforcing inline-only style)")
         
+        # STEP 0.1: PRESERVE LIST CONTENT BUT REMOVE ONLY TRULY EMPTY ITEMS
+        # After removing citations, only remove list items that are completely empty
+        # DO NOT remove items with actual content
+        content = re.sub(r'<li>\s*</li>', '', content)  # Only completely empty <li> tags
+        content = re.sub(r'<li>\s*[.,;:\-]*\s*</li>', '', content)  # Only punctuation-only items
+        # Be more careful with label-only items - only remove if they have no content after the colon
+        content = re.sub(r'<li>\s*<strong>[^<]*:</strong>\s*</li>', '', content)  # Label-only items (no content after colon)
+        logger.info("🧹 Removed only truly empty list items after citation stripping")
+        
         # STEP 0.5: REMOVE EMPTY LABEL PARAGRAPHS (Gemini bug)
         # Matches: <p><strong>GitHub Copilot:</strong></p> (label with NO content after)
         # Matches: <p><strong>Amazon Q Developer:</strong></p>
         content = re.sub(r'<p>\s*<strong>[^<]+:</strong>\s*</p>', '', content)
         logger.info("🧹 Removed empty label paragraphs")
         
-        # STEP 0.6: FIX SENTENCE FRAGMENTS AT START OF PARAGRAPHS (Gemini bug)
-        # Gemini sometimes splits sentences incorrectly, creating fragments like:
-        # "<p>Some text</p><p>. However, more text</p>" → "<p>Some text. However, more text</p>"
-        # "<p>Some text</p><p>. Also, more text</p>" → "<p>Some text. Also, more text</p>"
-        # "<p>Some text</p><p>What is as these...</p>" → "<p>Some text What is as these...</p>"
-        # Pattern: </p><p> followed by punctuation or fragment word
-        # Fix periods/spaces at start of paragraphs (from paragraph splitting bug)
-        # Match: </p><p>. Also,  and merge into previous paragraph by removing </p><p> tags
-        # Pattern matches: previous para content, </p>, <p>, punctuation+space+sentence start
-        content = re.sub(r'(<p>[^<]*?)\s*</p>\s*<p>\s*([.,;:]\s+[A-Z][^<]*?</p>)', r'\1\2', content)  # Merge punctuation + sentence into previous para
-        # Fix periods after lists: </li></ul><p>. Also, → <li>...pipeline.</li></ul><p>Also,
-        # The period belongs to the previous list item, so move it back inside the <li> tag
-        # Pattern: list item content, </li>, optional </ul>, <p>, period+space, new sentence
-        # Move the period to the end of the list item content (before </li>)
-        content = re.sub(r'(<li>[^<]*?)([^.,;:!?])\s*(</li>)\s*(</(?:ul|ol)>)?\s*<p>\s*([.,;:]\s+)([A-Z][^<]*?)', r'\1\2\5\3\4<p>\6', content)  # Move period into list item
-        # Simpler fallback: if we can't match the full pattern, just move period before </li>
-        content = re.sub(r'(</li>)\s*(</(?:ul|ol)>)?\s*<p>\s*([.,;:]\s+)([A-Z][^<]*?)', r'\3\1\2<p>\4', content)  # Move period before </li> (fallback)
-        # Fallback for single punctuation (without full sentence)
-        content = re.sub(r'</p>\s*<p>(\s*[.,;:])', r'\1', content)  # Join single punctuation (fallback)
-        # Fix phrase fragments
-        content = re.sub(r'</p>\s*<p>(This is |What is |That\'s why |If you want |When you )', r' \1', content)  # Join phrase fragments
+        # STEP 0.6: FIX SENTENCE FRAGMENTS AND ORPHANED TEXT - AGGRESSIVE VERSION
+        # Gemini splits sentences incorrectly, creating fragments that need to be merged
         
-        # STEP 0.6a: FIX KEYWORD BOLDING ISSUE - Merge <strong> tags that appear after </p> back into previous paragraph
-        # This fixes the issue where keywords wrapped in <strong> are placed in new <p> tags, breaking sentences
-        # Example: "<p>text </p><p><strong>keyword</strong></p>" → "<p>text <strong>keyword</strong></p>"
-        # Pattern 1: </p><p><strong>keyword</strong></p> → merge into previous paragraph
-        # This pattern finds </p> followed by <p><strong>keyword</strong></p> and merges them
-        content = re.sub(r'</p>\s*<p>\s*<strong>([^<]+)</strong>\s*</p>', r' <strong>\1</strong></p>', content)
-        # Pattern 2: </p><strong>keyword</strong> (without wrapping <p>, not followed by </p>) → merge into previous paragraph
-        content = re.sub(r'</p>\s*<strong>([^<]+)</strong>(?!</p>)', r' <strong>\1</strong></p>', content)
-        # Pattern 3: </p><strong>keyword</strong></p> → merge into previous paragraph
-        content = re.sub(r'</p>\s*<strong>([^<]+)</strong>\s*</p>', r' <strong>\1</strong></p>', content)
-        logger.info("🔧 Fixed sentence fragments at paragraph starts and keyword bolding issues")
+        # Fix fragments at paragraph start - merge short paragraphs with next paragraph
+        # Pattern: Short fragments like "In a", "You can", "What is", etc.
+        content = re.sub(r'</p>\s*<p>\s*(In a|You can|What is|When you|If you|That\'s why|This is|How to|For example)\s*</p>\s*<p>', r' \1 ', content)  # Remove orphaned short phrases and fix structure
+        content = re.sub(r'</p>\s*<p>\s*(In a|You can|What is|When you|If you|That\'s why|This is|How to|For example)\s+', r' \1 ', content)  # Merge short phrases with next text
+        
+        # Fix truncated sentences at end of paragraphs - more specific patterns
+        # Pattern: "That's why trust is e" → remove entirely if incomplete (ends with single letter after space)
+        content = re.sub(r'<p>[^<]*\s[a-z]\s*</p>', '', content)  # Remove paragraphs ending with single letter (incomplete)
+        content = re.sub(r'\s[a-z]\s*</p>', '</p>', content)  # Remove trailing single letters before closing paragraph
+        
+        # Fix broken HTML structure after merging
+        content = re.sub(r'<p>\s*<p>', '<p>', content)  # Remove double opening paragraph tags
+        content = re.sub(r'</p>\s*</p>', '</p>', content)  # Remove double closing paragraph tags
+        
+        # Fix orphaned punctuation and merge sentences
+        content = re.sub(r'</p>\s*<p>\s*([.,;:])\s+([A-Z])', r'\1 \2', content)  # Merge punctuation + capital letter
+        content = re.sub(r'</p>\s*<p>\s*([.,;:])', r'\1', content)  # Merge orphaned punctuation
+        
+        # Fix obvious sentence continuations
+        content = re.sub(r'</p>\s*<p>\s*(However|Therefore|Also|Additionally|Furthermore|Moreover|Nevertheless)\b', r'. \1', content)  # Add period before transitions
+        content = re.sub(r'</p>\s*<p>\s*(This is why|This means that|This allows|This ensures)\b', r'. \1', content)  # Add period before explanations
+        
+        # STEP 0.6a: REMOVE UNWANTED KEYWORD BOLDING
+        # Remove <strong> tags around keywords that shouldn't be emphasized
+        # This prevents keywords from appearing in bold in the final output
+        
+        # Remove <strong> tags in broken paragraph contexts (orphaned bolded keywords)
+        content = re.sub(r'</p>\s*<p>\s*<strong>([^<]+)</strong>\s*</p>', r' \1</p>', content)  # Remove bold, merge text
+        content = re.sub(r'</p>\s*<strong>([^<]+)</strong>(?!</p>)', r' \1</p>', content)  # Remove bold, merge text
+        content = re.sub(r'</p>\s*<strong>([^<]+)</strong>\s*</p>', r' \1</p>', content)  # Remove bold, merge text
+        
+        # Also remove standalone <strong> tags around specific keywords that shouldn't be bold
+        # Target common keywords that are being inappropriately bolded
+        content = re.sub(r'<strong>(zero trust security architecture|SIEM automation|cloud security|DevSecOps)</strong>', r'\1', content, flags=re.IGNORECASE)
+        
+        logger.info("🔧 Removed unwanted keyword bolding and fixed orphaned bold tags")
         
         # STEP 0.7: FIX GEMINI HALLUCINATION PATTERNS (context loss bugs)
         # Gemini loses context mid-generation and outputs broken phrases:
@@ -1422,12 +1442,11 @@ class HTMLRenderer:
         
         # Pattern 2a: Remove standalone list introduction labels
         # Matches: <p>Here are key points:</p> or <p>Key benefits include:</p> followed by list
-        # CRITICAL FIX: Remove robotic list introductions
+        # CONSERVATIVE FIX: Remove ONLY truly robotic list introductions (preserve meaningful content)
         list_intro_patterns = [
-            (r'<p>\s*(?:Here are key points|Key benefits include|Important considerations|Here\'s what matters|Here are the|Key points|Here\'s how|Here\'s what)\s*:?\s*</p>\s*(?=<(?:ul|ol))', ''),
-            (r'<p>\s*(?:Here are|Key|Important|Here\'s)\s+[^<]{0,30}:\s*</p>\s*(?=<(?:ul|ol))', ''),
-            # Match without space: <p>Label:</p><ul> → <ul>
-            (r'<p>\s*(?:Here are key points|Key benefits include|Important considerations)\s*:?\s*</p><(ul|ol)', r'<\1'),
+            # Only remove completely generic intros that add zero value
+            (r'<p>\s*(?:Key points|Here are the)\s*:?\s*</p>\s*(?=<(?:ul|ol))', ''),
+            (r'<p>\s*(?:Important|Key)\s*:?\s*</p>\s*(?=<(?:ul|ol))', ''),  # Single word labels only
         ]
         for pattern, replacement in list_intro_patterns:
             content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
@@ -1441,28 +1460,29 @@ class HTMLRenderer:
             flags=re.MULTILINE
         )
         
-        # Pattern 3a: Remove standalone labels in list items (AGGRESSIVE)
-        # Matches: <li>Label: [N][M]</li> or <li><strong>Label:</strong> [N]</li>
+        # Pattern 3a: Remove ONLY citation-only list items (CONSERVATIVE)
+        # Only remove list items that contain NOTHING but a label and citations
+        # Preserve items with actual content after the colon
         content = re.sub(
-            r'<li>\s*(?:<strong>)?[^<:]+:(?:</strong>)?\s*(?:\[\d+\]\s*)+\s*</li>',
+            r'<li>\s*(?:<strong>)?[^<:]{1,15}:(?:</strong>)?\s*(?:\[\d+\]\s*)+\s*</li>',  # Short labels only
             '',
             content,
             flags=re.IGNORECASE
         )
         
-        # Pattern 3b: Remove multi-word standalone labels (AGGRESSIVE)  
-        # Matches: "Essential Tooling Checklist: [2][3]" or "IDE-Integrated SAST: [2][3]"
-        # Works even with hyphens, spaces, and capital letters
+        # Pattern 3b: Remove ONLY obvious citation-only labels (CONSERVATIVE)  
+        # Only match very specific patterns that are clearly citation-only
+        # Be much more conservative to avoid removing legitimate content
         content = re.sub(
-            r'\n\s*([A-Z][A-Za-z\s\-]{3,50}):\s*(?:\[\d+\]\s*)+\s*\n',
+            r'\n\s*([A-Z][A-Za-z\s]{3,20}):\s*(?:\[\d+\]\s*){2,}\s*\n',  # Only if 2+ citations and short label
             '\n',
             content
         )
         
-        # Pattern 3c: Remove labels immediately after paragraph tags
-        # Matches: <p>Label: [N]</p> or <p>Multi Word Label: [N][M]</p>
+        # Pattern 3c: Remove ONLY short citation-only paragraphs (CONSERVATIVE)
+        # Only remove paragraphs that contain NOTHING but a short label and citations
         content = re.sub(
-            r'<p>\s*([A-Z][^:<]{2,50}):\s*(?:\[\d+\]\s*)+\s*</p>',
+            r'<p>\s*([A-Z][^:<]{2,15}):\s*(?:\[\d+\]\s*){2,}\s*</p>',  # Only short labels with 2+ citations
             '',
             content,
             flags=re.IGNORECASE
@@ -1524,13 +1544,13 @@ class HTMLRenderer:
             # Check if list item text appears verbatim in any paragraph
             for para in paragraphs:
                 para_text = re.sub(r'<[^>]+>', '', para).strip()
-                # If list item is >80% similar to paragraph or exact match, remove it
+                # Only remove list items that are EXACT duplicates (very conservative)
                 if li_text and para_text:
-                    similarity = len(set(li_text.lower().split()) & set(para_text.lower().split())) / max(len(li_text.split()), len(para_text.split()))
-                    if similarity > 0.8 or li_text.lower() in para_text.lower():
-                        # Remove this list item
+                    # Only remove if it's an exact match or the list item is completely contained in paragraph
+                    if li_text.lower().strip() == para_text.lower().strip() or (li_text.lower() in para_text.lower() and len(li_text.split()) < 5):
+                        # Remove this list item (only very short exact matches)
                         content = content.replace(f'<li>{li}</li>', '', 1)
-                        logger.debug(f"Removed duplicate list item: {li_text[:50]}...")
+                        logger.debug(f"Removed exact duplicate list item: {li_text[:50]}...")
                         break
         
         # Pattern 7: Clean up multiple consecutive newlines
