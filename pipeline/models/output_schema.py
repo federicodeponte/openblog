@@ -386,22 +386,21 @@ class ArticleOutput(BaseModel):
     @classmethod
     def validate_no_em_dashes(cls, v: str) -> str:
         """
-        Fix Issue 2: BLOCK em dashes (zero tolerance - critical AI marker)
+        Fix Issue 2: AUTO-REPLACE em dashes (defense-in-depth)
         
-        Rejects: —, &mdash;, &#8212;, &#x2014;
-        Em dashes are AI-generated content markers and must be blocked.
-        Forces use of commas, parentheses, or colons instead.
+        Replaces: —, &mdash;, &#8212;, &#x2014; → regular dash ( - )
+        System instruction already prevents Gemini from generating these,
+        but this validator provides fallback normalization.
         """
         if not v or not isinstance(v, str):
             return v
         
-        # Check for em dash patterns
-        if re.search(r'—|&mdash;|&#8212;|&#x2014;', v):
-            logger.error(f"❌ Em dashes found (AI marker detected): {v[:100]}...")
-            raise ValueError(
-                f"Em dashes (—) are FORBIDDEN. Use commas, parentheses, or colons instead. "
-                f"Found in: {v[:100]}..."
-            )
+        # Auto-replace em dash patterns with regular dashes
+        original = v
+        v = re.sub(r'—|&mdash;|&#8212;|&#x2014;', ' - ', v)
+        
+        if v != original:
+            logger.warning(f"⚠️  Em dashes found and auto-replaced in: {original[:80]}...")
         
         return v
     
