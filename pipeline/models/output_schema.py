@@ -185,6 +185,16 @@ class ArticleOutput(BaseModel):
         default=[],
         description="Comparison tables (max 2 per article). Use for product comparisons, pricing tiers, feature matrices.",
     )
+    
+    # PRODUCTION FIX: Unified content for downstream processing
+    unified_content: Optional[str] = Field(
+        default="",
+        description="Complete article in unified Markdown format. Created in Stage 3 from all schema fields.",
+    )
+    unified_word_count: Optional[int] = Field(
+        default=0,
+        description="Accurate word count of unified content. Used for production quality validation.",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={

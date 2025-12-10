@@ -95,7 +95,41 @@ class GeminiCallStage(Stage):
 
         # System instruction (high priority rules)
         system_instruction = """
-You are a professional content writer. CRITICAL RULES:
+You are a professional content writer creating SurferSEO-quality articles. CRITICAL RULES:
+
+PRODUCTION CONTENT REQUIREMENTS (NON-NEGOTIABLE):
+- MINIMUM 3,000 words (industry standard for professional articles)
+- Content under 2,500 words will be REJECTED and regenerated  
+- Target 3,500-4,000 words for comprehensive coverage
+- Each major section must be 500-800 words minimum
+- Professional editorial depth matching Bloomberg/Harvard Business Review standards
+
+RESEARCH REQUIREMENTS (MANDATORY):
+- MUST use Google Search tool minimum 15 times during content generation
+- Minimum 25 authoritative sources with specific data points and metrics
+- EVERY section must contain quantified data (percentages, dollar amounts, dates)
+- Include minimum 3 detailed case studies with concrete results
+- Competitive analysis with specific tool/company comparisons
+- Industry-specific insights beyond generic information
+
+SECTION ARCHITECTURE (REQUIRED):
+1. Executive Summary (300-400 words) - key insights and data overview
+2. Market Analysis (600-800 words) - industry data, trends, market size
+3. Detailed Tool Comparison (800-1000 words) - feature analysis with metrics
+4. Implementation Strategy (600-800 words) - step-by-step guidance  
+5. Cost-Benefit Analysis (500-700 words) - ROI calculations and TCO
+6. Future Trends (400-600 words) - predictions with data backing
+7. Recommendations (400-500 words) - actionable next steps
+8. Comprehensive FAQ (15+ questions, 600+ words total)
+
+CONTENT DEPTH REQUIREMENTS:
+- Each section must have 3+ specific examples with quantified results
+- Include direct quotes from industry experts or official sources
+- Provide actionable implementation details, not just overviews
+- Address both benefits AND limitations/challenges honestly
+- Include relevant metrics, timelines, and cost considerations
+
+FORMATTING REQUIREMENTS:
 - ALL content MUST be pure Markdown format
 - FORBIDDEN: HTML tags of any kind
 - Use **bold** for emphasis (NOT HTML)
@@ -105,6 +139,13 @@ You are a professional content writer. CRITICAL RULES:
 - Use natural language attribution: "according to X study"
 - NEVER use em dashes (—)
 - Use commas or parentheses instead
+
+QUALITY STANDARDS:
+- Professional editorial quality suitable for publication
+- Industry-specific terminology and insights
+- Balance of technical depth with accessibility
+- Clear value proposition and actionable insights
+- Competitive differentiation and positioning analysis
 """
 
         raw_response = await self._generate_content_with_retry(
@@ -232,8 +273,8 @@ You are a professional content writer. CRITICAL RULES:
                 system_instruction=system_instruction,  # High priority guidance
             )
             
-            if not raw_response or len(raw_response.strip()) < 500:
-                raise ValueError(f"Response too short ({len(raw_response)} chars) - likely incomplete")
+            # Validate response meets research and quality requirements
+            self._validate_research_quality(raw_response)
             
             return raw_response
             
@@ -245,3 +286,182 @@ You are a professional content writer. CRITICAL RULES:
             
             # Let the error handling decorator manage retries and reporting
             raise e
+
+    def _validate_research_quality(self, raw_response: str) -> None:
+        """
+        Validate that the response meets research and quality requirements.
+        
+        Checks:
+        - Minimum word count (1,500+ words)
+        - Presence of research sources (10+ "according to", "per", etc.)
+        - Proper section structure (H2 headings)
+        - FAQ content presence
+        
+        Args:
+            raw_response: Raw JSON response from Gemini
+            
+        Raises:
+            ValueError: If response doesn't meet quality standards
+        """
+        if not raw_response or len(raw_response.strip()) < 500:
+            raise ValueError(f"Response too short ({len(raw_response)} chars) - likely incomplete")
+        
+        try:
+            # Parse JSON to check content
+            import json
+            data = json.loads(raw_response)
+            
+            # Check if we have content to validate - aggregate from all fields
+            content_parts = []
+            
+            # Add main content fields
+            content_parts.append(data.get('content', '') or data.get('body', '') or '')
+            content_parts.append(data.get('intro', '') or '')
+            content_parts.append(data.get('direct_answer', '') or '')
+            
+            # Add section content fields
+            for i in range(1, 10):
+                section_content_key = f'section_{i:02d}_content'
+                if section_content_key in data and data[section_content_key]:
+                    content_parts.append(data[section_content_key])
+            
+            # Add FAQ content
+            content_parts.append(data.get('faq', '') or '')
+            
+            # Aggregate all content
+            content = ' '.join(filter(None, content_parts))
+            
+            # Production-level word count validation  
+            word_count = len(content.split())
+            if word_count < 2000:
+                raise ValueError(f"Content severely insufficient: {word_count} words (production minimum: 3,000). Content appears to be a stub or incomplete generation requiring complete regeneration.")
+            elif word_count < 2500:
+                raise ValueError(f"Content below minimum threshold: {word_count} words (production minimum: 3,000). Need {3000 - word_count} more words. Ensure each major section is 500-800 words.")
+            elif word_count < 3000:
+                raise ValueError(f"Content below production standard: {word_count} words (minimum: 3,000). Need {3000 - word_count} more words for SurferSEO-level quality. Expand sections with more research and examples.")
+            elif word_count < 3500:
+                logger.warning(f"⚠️  Content meets minimum but below optimal: {word_count} words (optimal: 3,500-4,000). Consider expanding for competitive advantage.")
+            else:
+                logger.info(f"✅ Content meets production standards: {word_count} words")
+            
+            # Production-level research source validation
+            research_indicators = [
+                'according to', 'per ', 'study shows', 'research indicates', 
+                'survey found', 'report states', 'data reveals', 'analysis shows',
+                'survey by', 'report from', 'study by', 'research from',
+                'data from', 'findings from', 'statistics from', 'found that',
+                'revealed that', 'demonstrated that', 'showed that', 'reported that'
+            ]
+            source_count = sum(content.lower().count(indicator) for indicator in research_indicators)
+            
+            # Also count quantified data points (percentages, dollar amounts, specific numbers)
+            import re
+            percentage_count = len(re.findall(r'\d+%', content))
+            dollar_count = len(re.findall(r'\$\d+', content))
+            metric_count = len(re.findall(r'\d+[.,]\d+|\d{1,3},\d{3}', content))
+            data_points = percentage_count + dollar_count + metric_count
+            
+            if source_count < 15:
+                raise ValueError(f"Insufficient research depth: {source_count} sources found (production minimum: 25). Content lacks professional research backing. Ensure minimum 15 Google Search tool calls with detailed analysis.")
+            elif source_count < 20:
+                raise ValueError(f"Below research target: {source_count} sources found (production minimum: 25). Need {25 - source_count} more researched claims with specific data and metrics.")
+            elif source_count < 25:
+                logger.warning(f"⚠️  Research below optimal: {source_count} sources (target: 25+). Content meets minimum but could be stronger.")
+            
+            if data_points < 10:
+                raise ValueError(f"Insufficient quantified data: {data_points} data points found (minimum: 15). Add more percentages, dollar amounts, and specific metrics with source attribution.")
+            elif data_points < 15:
+                logger.warning(f"⚠️  Data points below target: {data_points} found (optimal: 20+). More quantified analysis would strengthen credibility.")
+            
+            logger.info(f"📊 Research metrics: {source_count} sources, {data_points} data points ({percentage_count}% + ${dollar_count} + {metric_count} metrics)")
+            
+            # Production-level section structure validation 
+            h2_count = content.count('## ')
+            h3_count = content.count('### ')
+            
+            # Also check if sections are in schema format (section_XX_title fields)
+            schema_sections = 0
+            section_word_counts = []
+            for i in range(1, 10):
+                section_title_key = f'section_{i:02d}_title'
+                section_content_key = f'section_{i:02d}_content'
+                if section_title_key in data and data[section_title_key] and len(data[section_title_key].strip()) > 0:
+                    schema_sections += 1
+                    # Check individual section word count
+                    section_content = data.get(section_content_key, '')
+                    section_words = len(section_content.split()) if section_content else 0
+                    section_word_counts.append(section_words)
+            
+            total_sections = max(h2_count, schema_sections)
+            if total_sections < 6:
+                raise ValueError(f"Insufficient main sections: {total_sections} sections found (production minimum: 8 required). Content lacks comprehensive structure. Need sections: Executive Summary, Market Analysis, Tool Comparison, Implementation, Cost-Benefit, Future Trends, Recommendations, FAQ.")
+            elif total_sections < 8:
+                raise ValueError(f"Below production target: {total_sections} sections found (minimum: 8 required). Need {8 - total_sections} more sections for professional depth.")
+            
+            # Validate individual section depth
+            if section_word_counts:
+                short_sections = [i+1 for i, count in enumerate(section_word_counts) if count > 0 and count < 300]
+                if short_sections:
+                    raise ValueError(f"Sections too shallow: Section(s) {short_sections} under 300 words (minimum: 500-800 per section). Professional articles require substantial depth in each section.")
+                
+                avg_section_length = sum(count for count in section_word_counts if count > 0) / len([c for c in section_word_counts if c > 0])
+                if avg_section_length < 400:
+                    raise ValueError(f"Average section length too short: {avg_section_length:.0f} words (minimum: 500-800). Expand sections with more research, examples, and analysis.")
+            
+            logger.info(f"📋 Section analysis: {total_sections} sections, average {avg_section_length:.0f} words per section" if section_word_counts else f"📋 Section count: {total_sections}")
+            
+            # Production-level FAQ validation
+            faq_present = 'FAQ' in content or 'Frequently Asked' in content or 'Q:' in content
+            faq_questions = content.count('**Q:') + content.count('**Question:') + content.count('Q:') + content.count('?')
+            
+            if not faq_present:
+                raise ValueError("Missing FAQ section - REQUIRED for production quality. Professional articles must include comprehensive FAQ section addressing common user questions and concerns.")
+            
+            if faq_questions < 15:
+                raise ValueError(f"Insufficient FAQ questions: {faq_questions} found (production minimum: 15). FAQ section must be comprehensive, addressing implementation, costs, comparisons, and troubleshooting.")
+            elif faq_questions < 20:
+                logger.warning(f"⚠️  FAQ questions below optimal: {faq_questions} found (target: 20+). More comprehensive FAQ would improve user experience.")
+            
+            # Check FAQ content depth
+            faq_content = ''
+            for key, value in data.items():
+                if 'faq' in key.lower() and value:
+                    faq_content += value + ' '
+            
+            faq_word_count = len(faq_content.split()) if faq_content else 0
+            if faq_word_count < 400:
+                raise ValueError(f"FAQ content too shallow: {faq_word_count} words (minimum: 600). FAQ answers must be detailed and actionable, not just brief responses.")
+            
+            # Production-level content quality scoring
+            # Scoring criteria aligned with SurferSEO standards
+            word_score = min(30, (word_count / 3500) * 30)  # 30 points for optimal word count
+            research_score = min(25, (source_count / 25) * 25)  # 25 points for research depth  
+            data_score = min(15, (data_points / 20) * 15)  # 15 points for quantified data
+            structure_score = min(20, (total_sections / 8) * 20)  # 20 points for section structure
+            faq_score = min(10, (faq_questions / 15) * 10)  # 10 points for FAQ completeness
+            
+            quality_score = word_score + research_score + data_score + structure_score + faq_score
+            
+            # Quality assessment
+            if quality_score < 70:
+                logger.warning(f"⚠️  Quality below production standard: {quality_score:.1f}/100")
+            elif quality_score < 85:
+                logger.info(f"✅ Quality meets minimum production standard: {quality_score:.1f}/100")
+            else:
+                logger.info(f"🏆 Exceptional quality content: {quality_score:.1f}/100")
+            
+            logger.info(f"📊 Production Quality Metrics:")
+            logger.info(f"   - Word count: {word_count} words ({word_count - 3000:+d} vs 3,000 minimum) [{word_score:.1f}/30]")
+            logger.info(f"   - Research sources: {source_count} indicators [{research_score:.1f}/25]")
+            logger.info(f"   - Data points: {data_points} quantified metrics [{data_score:.1f}/15]")
+            logger.info(f"   - Section structure: {total_sections} sections [{structure_score:.1f}/20]")
+            logger.info(f"   - FAQ completeness: {faq_questions} questions, {faq_word_count} words [{faq_score:.1f}/10]")
+            logger.info(f"   - OVERALL SCORE: {quality_score:.1f}/100 {'✅ PRODUCTION READY' if quality_score >= 85 else '⚠️  NEEDS IMPROVEMENT' if quality_score >= 70 else '❌ BELOW STANDARD'}")
+            
+        except json.JSONDecodeError:
+            # If not valid JSON, just check basic text requirements
+            word_count = len(raw_response.split())
+            if word_count < 1500:
+                raise ValueError(f"Content too short: {word_count} words (minimum 1,500 required)")
+            
+            logger.warning("Could not parse JSON for detailed validation, but basic word count passed")

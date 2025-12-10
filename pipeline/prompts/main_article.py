@@ -64,8 +64,9 @@ UNIVERSAL_STANDARDS = {
     "word_count_target": "2000-2500",
     "min_word_count": "2000",
     "list_count": "12+ lists minimum",
-    "citation_count": "15-20 authoritative sources",  # Increased for research depth
-    "data_points_min": "15-20 statistics/data points",  # NEW: Research depth requirement
+    "citation_count": "MINIMUM 15 authoritative sources with natural language attribution",  # Increased for research depth
+    "data_points_min": "MINIMUM 15 statistics/data points from recent research",  # NEW: Research depth requirement
+    "research_mandate": "MANDATORY: Use Google Search tool extensively to gather current data and sources",  # NEW: Research tool requirement
     "case_studies_min": "2-3 concrete case studies",  # NEW: Example quality requirement
     "examples_min": "5-7 specific examples",  # NEW: Example quality requirement
     "unique_insights_min": "2-3 unique insights",  # NEW: Originality requirement
@@ -202,7 +203,14 @@ You are writing a long-form blog post in {company_name}'s voice, fully optimized
 
 ---
 
-1. Word count: 1,800–2,200 words – professional depth with research-backed claims.
+1. Word count: MINIMUM 1,800 words, target 2,000-2,200 words – professional depth with research-backed claims.
+
+   **CRITICAL WORD COUNT ENFORCEMENT:**
+   - Content under 1,800 words will be REJECTED and regenerated
+   - Target breakdown: Introduction (200 words) + Body sections (1,400-1,600 words) + Conclusion (200 words)
+   - Each H2 section must be 200-400 words minimum
+   - FAQ section must contribute 200+ words minimum
+   - Count words during generation and expand sections as needed
 
 2. Headline: EXACTLY 50-60 characters. Subtitle: 80-100 characters. Teaser: 2-3 sentences with HOOK.
 

@@ -108,6 +108,15 @@ class ExtractionStage(Stage):
 
         # Store in context
         context.structured_data = structured_data
+        
+        # CRITICAL FIX: Create unified content for downstream processing
+        logger.info("Creating unified content for downstream stages...")
+        unified_content = self._create_unified_content(structured_data)
+        context.structured_data.unified_content = unified_content
+        context.structured_data.unified_word_count = self._count_unified_words(unified_content)
+        
+        logger.info(f"✅ Unified content: {context.structured_data.unified_word_count:,} words")
+        logger.info(f"   Content length: {len(unified_content):,} characters")
 
         return context
 
@@ -328,6 +337,172 @@ class ExtractionStage(Stage):
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
         return cleaned
+    
+    def _create_unified_content(self, article: ArticleOutput) -> str:
+        """
+        Create unified Markdown content from all schema fields.
+        
+        This is the ROOT-LEVEL FIX for the JSON schema fragmentation issue.
+        Combines all content fields into a single unified document for downstream processing.
+        
+        Args:
+            article: ArticleOutput with populated schema fields
+            
+        Returns:
+            Complete article in unified Markdown format
+        """
+        content_parts = []
+        
+        # Add headline (without H1 formatting - will be added by renderer)
+        if article.Headline:
+            content_parts.append(f"# {article.Headline}\n")
+        
+        # Add subtitle if present
+        if article.Subtitle:
+            content_parts.append(f"*{article.Subtitle}*\n")
+        
+        # Add teaser/hook
+        if article.Teaser:
+            content_parts.append(f"{article.Teaser}\n")
+        
+        # Add direct answer
+        if article.Direct_Answer:
+            content_parts.append(f"**Quick Answer:** {article.Direct_Answer}\n")
+        
+        # Add intro
+        if article.Intro:
+            content_parts.append(f"{article.Intro}\n")
+        
+        # Add all content sections
+        sections = [
+            (article.section_01_title, article.section_01_content),
+            (article.section_02_title, article.section_02_content),
+            (article.section_03_title, article.section_03_content),
+            (article.section_04_title, article.section_04_content),
+            (article.section_05_title, article.section_05_content),
+            (article.section_06_title, article.section_06_content),
+            (article.section_07_title, article.section_07_content),
+            (article.section_08_title, article.section_08_content),
+            (article.section_09_title, article.section_09_content),
+        ]
+        
+        for title, content in sections:
+            if title and title.strip():
+                content_parts.append(f"\n## {title}\n")
+                if content and content.strip():
+                    # Clean content: remove HTML if present, keep Markdown
+                    clean_content = self._clean_content_for_unified(content)
+                    content_parts.append(f"{clean_content}\n")
+        
+        # Add key takeaways if present
+        takeaways = [article.key_takeaway_01, article.key_takeaway_02, article.key_takeaway_03]
+        active_takeaways = [t for t in takeaways if t and t.strip()]
+        if active_takeaways:
+            content_parts.append("\n## Key Takeaways\n")
+            for i, takeaway in enumerate(active_takeaways, 1):
+                content_parts.append(f"{i}. {takeaway}\n")
+        
+        # Add FAQ section if present
+        faq_pairs = [
+            (article.faq_01_question, article.faq_01_answer),
+            (article.faq_02_question, article.faq_02_answer),
+            (article.faq_03_question, article.faq_03_answer),
+            (article.faq_04_question, article.faq_04_answer),
+            (article.faq_05_question, article.faq_05_answer),
+            (article.faq_06_question, article.faq_06_answer),
+        ]
+        active_faqs = [(q, a) for q, a in faq_pairs if q and q.strip() and a and a.strip()]
+        if active_faqs:
+            content_parts.append("\n## Frequently Asked Questions\n")
+            for question, answer in active_faqs:
+                content_parts.append(f"### {question}\n")
+                clean_answer = self._clean_content_for_unified(answer)
+                content_parts.append(f"{clean_answer}\n")
+        
+        # Add PAA section if present  
+        paa_pairs = [
+            (article.paa_01_question, article.paa_01_answer),
+            (article.paa_02_question, article.paa_02_answer),
+            (article.paa_03_question, article.paa_03_answer),
+            (article.paa_04_question, article.paa_04_answer),
+        ]
+        active_paas = [(q, a) for q, a in paa_pairs if q and q.strip() and a and a.strip()]
+        if active_paas:
+            content_parts.append("\n## People Also Ask\n")
+            for question, answer in active_paas:
+                content_parts.append(f"### {question}\n")
+                clean_answer = self._clean_content_for_unified(answer)
+                content_parts.append(f"{clean_answer}\n")
+        
+        # Join all parts into unified content
+        unified = "\n".join(content_parts).strip()
+        
+        logger.debug(f"Created unified content with {len(content_parts)} parts")
+        return unified
+    
+    def _clean_content_for_unified(self, content: str) -> str:
+        """
+        Clean content for unified format.
+        
+        Removes HTML tags, preserves Markdown formatting.
+        Handles both HTML and Markdown content gracefully.
+        
+        Args:
+            content: Raw content (may be HTML or Markdown)
+            
+        Returns:
+            Clean Markdown content
+        """
+        if not content:
+            return ""
+        
+        # If content contains HTML tags, convert to Markdown-equivalent
+        if '<' in content and '>' in content:
+            # Basic HTML to Markdown conversion
+            content = re.sub(r'<p>(.*?)</p>', r'\1\n', content, flags=re.DOTALL)
+            content = re.sub(r'<strong>(.*?)</strong>', r'**\1**', content)
+            content = re.sub(r'<em>(.*?)</em>', r'*\1*', content)
+            content = re.sub(r'<ul>(.*?)</ul>', r'\1', content, flags=re.DOTALL)
+            content = re.sub(r'<li>(.*?)</li>', r'- \1', content)
+            content = re.sub(r'<h([1-6])>(.*?)</h[1-6]>', r'#\1 \2', content)
+            
+            # Remove any remaining HTML tags
+            content = re.sub(r'<[^>]+>', '', content)
+            
+            logger.debug("Converted HTML content to Markdown")
+        
+        # Clean up whitespace
+        content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)  # Max 2 consecutive newlines
+        content = re.sub(r'^\s+', '', content, flags=re.MULTILINE)  # Remove leading spaces
+        
+        return content.strip()
+    
+    def _count_unified_words(self, content: str) -> int:
+        """
+        Count words in unified content.
+        
+        More accurate than individual field counting because it handles
+        the content as a complete document.
+        
+        Args:
+            content: Unified Markdown content
+            
+        Returns:
+            Total word count
+        """
+        if not content:
+            return 0
+        
+        # Remove Markdown syntax for accurate counting
+        text = re.sub(r'#{1,6}\s+', '', content)  # Remove headers
+        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # Remove bold
+        text = re.sub(r'\*(.*?)\*', r'\1', text)  # Remove italic
+        text = re.sub(r'^-\s+', '', text, flags=re.MULTILINE)  # Remove list markers
+        text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)  # Remove numbered lists
+        
+        # Split by whitespace and count
+        words = text.split()
+        return len(words)
 
     def __repr__(self) -> str:
         """String representation."""

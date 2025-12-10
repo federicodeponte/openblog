@@ -64,9 +64,16 @@ class MetadataStage(Stage):
             context.parallel_results["metadata"] = ArticleMetadata()
             return context
 
-        # Count total words
-        word_count = self._count_article_words(context.structured_data)
-        logger.info(f"Counted {word_count} words")
+        # Count total words - use unified count if available (more accurate)
+        if hasattr(context.structured_data, 'unified_word_count') and context.structured_data.unified_word_count > 0:
+            word_count = context.structured_data.unified_word_count
+            logger.info(f"✅ Using unified word count: {word_count:,} words")
+        else:
+            # Fallback to field-by-field counting
+            word_count = self._count_article_words(context.structured_data)
+            logger.info(f"📊 Field-by-field count: {word_count:,} words (fallback method)")
+        
+        logger.info(f"Total article length: {word_count:,} words")
 
         # Calculate reading time
         read_time = MetadataCalculator.calculate_read_time(word_count)
