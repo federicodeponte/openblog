@@ -376,22 +376,29 @@ class ArticleOutput(BaseModel):
     @classmethod
     def validate_no_em_dashes(cls, v: str) -> str:
         """
-        Fix Issue 2: BLOCK em dashes (zero tolerance - critical AI marker)
+        Fix Issue 2: AUTO-CORRECT em dashes to prevent pipeline failures
         
-        Rejects: —, &mdash;, &#8212;, &#x2014;
-        Em dashes are AI-generated content markers and must be blocked.
-        Forces use of commas, parentheses, or colons instead.
+        Converts: —, &mdash;, &#8212;, &#x2014; → " - "
+        Em dashes are AI-generated content markers - auto-correct instead of blocking.
         """
         if not v or not isinstance(v, str):
             return v
         
-        # Check for em dash patterns
-        if re.search(r'—|&mdash;|&#8212;|&#x2014;', v):
-            logger.error(f"❌ Em dashes found (AI marker detected): {v[:100]}...")
-            raise ValueError(
-                f"Em dashes (—) are FORBIDDEN. Use commas, parentheses, or colons instead. "
-                f"Found in: {v[:100]}..."
-            )
+        # Check for em dash patterns and auto-correct
+        em_dash_patterns = [
+            ('—', ' - '),           # Direct em dash
+            ('&mdash;', ' - '),     # HTML entity
+            ('&#8212;', ' - '),     # Numeric entity
+            ('&#x2014;', ' - ')     # Hex entity
+        ]
+        
+        original = v
+        for pattern, replacement in em_dash_patterns:
+            if pattern in v:
+                v = v.replace(pattern, replacement)
+        
+        if v != original:
+            logger.warning(f"🔧 Auto-corrected em dashes to regular dashes: {v[:100]}...")
         
         return v
     
