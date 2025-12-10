@@ -1,196 +1,133 @@
 """
-Stage 1: Market-Aware Prompt Construction
+Stage 1: Simple Prompt Construction
 
-ABOUTME: Builds market-specific prompts for different countries/regions
-ABOUTME: Replaces German-only template with culturally appropriate content generation
-
-Maps to v4.1 Phase 2, Step 4: create_prompt
+ABOUTME: Builds prompts using company context instead of complex market templates
+ABOUTME: Simple, clean system that focuses on company information only
 
 Builds the main article prompt by:
-1. Determining target market from country parameter
-2. Loading market-specific prompt template from market factory
-3. Injecting all variables (keyword, company, language, country, etc)
-4. Validating prompt structure for market requirements
+1. Loading company context (name, industry, description, etc.)
+2. Injecting company variables into a simple prompt template
+3. Adding optional sections (pain points, competitors, guidelines)
+4. Validating prompt structure
 5. Storing in context for Stage 2
 
-This prompt is CRITICAL because it drives deep research in Stage 2.
-The market-specific prompt ensures:
-- Cultural communication patterns appropriate for target market
-- Regulatory context relevant to country (BAFA for DE, WKO for AT, ANAH for FR)
-- Quality standards matching market benchmarks
-- Authority positioning suitable for local professional expectations
+This approach is SIMPLE and EFFECTIVE:
+- Company-focused content generation
+- All fields optional except company URL
+- Clean prompt structure without market complexity
+- Flexible content guidelines and instructions
 
-Combined with tools (googleSearch, urlContext), this creates market-appropriate deep research.
+Combined with tools (googleSearch, urlContext), this creates company-appropriate content.
 """
 
 import logging
 from typing import Dict, Any
 
 from ..core import ExecutionContext, Stage
-from ..prompts.main_article import get_main_article_prompt
+from ..core.company_context import CompanyContext
+from ..prompts.simple_article_prompt import build_article_prompt, validate_prompt_inputs
 
 logger = logging.getLogger(__name__)
 
 
 class PromptBuildStage(Stage):
     """
-    Stage 1: Build market-specific article prompt with variable injection.
+    Stage 1: Build simple article prompt with company context injection.
 
-    Builds the complete prompt that will be sent to Gemini, customized for target market.
-    Prompt includes market-specific quality standards and cultural adaptation.
+    Builds the complete prompt that will be sent to Gemini using company information.
+    Simple system without market complexity - company context only.
     """
 
     stage_num = 1
-    stage_name = "Market-Aware Prompt Construction"
+    stage_name = "Simple Prompt Construction"
 
     async def execute(self, context: ExecutionContext) -> ExecutionContext:
         """
-        Execute Stage 1: Build market-specific article prompt.
+        Execute Stage 1: Build simple article prompt using company context.
 
         Inputs from context:
-        - job_config.primary_keyword: Main topic
-        - job_config.country: Target country (DE, AT, FR, etc.)
-        - job_config.language: Target language (de, fr, en, etc.)
-        - company_data.company_name: Company name
-        - company_data.company_info: Business info
-        - company_data.company_competitors: Competitors to avoid
-        - blog_page.links: Internal links to reference
+        - job_config.primary_keyword: Main topic (required)
+        - job_config.language: Target language (optional, default: en)
+        - company_data: Company information (company_url required, rest optional)
 
         Outputs to context:
-        - prompt: Complete market-specific prompt string
-        - target_market: Market profile information
+        - prompt: Complete prompt string ready for Gemini
+        - company_context: Processed company information
 
         Args:
             context: ExecutionContext from Stage 0
 
         Returns:
-            Updated context with market-aware prompt populated
+            Updated context with simple prompt populated
 
         Raises:
             ValueError: If required fields missing
         """
         logger.info(f"Stage 1: {self.stage_name}")
 
-        # Extract variables from context
+        # Extract primary keyword (required)
         primary_keyword = context.job_config.get("primary_keyword", "")
-        company_name = context.company_data.get("company_name", "Company")
-        company_info = context.company_data.get("company_info", {})
-        competitors = context.company_data.get("company_competitors", [])
-        
-        # Market-specific parameters with validation
-        from ..prompts.main_article import validate_country
-        raw_country = context.job_config.get("country", "US") 
-        country = validate_country(raw_country)
-        language = context.job_config.get("language") or context.language or "en"
-        
-        internal_links = context.blog_page.get("links", "")
-        custom_instructions = context.job_config.get("content_generation_instruction", "")
-        system_prompts = context.job_config.get("system_prompts", [])
-
-        logger.debug(f"Keyword: {primary_keyword}")
-        logger.debug(f"Target Market: {country} (raw: {raw_country})")
-        logger.debug(f"Language: {language}")
-        logger.debug(f"System prompts: {len(system_prompts)} provided")
-        logger.debug(f"Company: {company_name}")
-        logger.debug(f"Competitors: {len(competitors)} identified")
-
-        # Validate inputs
         if not primary_keyword:
             raise ValueError("primary_keyword is required")
 
-        # Build market-aware prompt using enhanced template with robust error handling
-        logger.debug(f"Building market-aware prompt for {country}...")
+        # Extract language (optional, default to English)
+        language = context.job_config.get("language", "en")
 
+        # Convert company_data to CompanyContext
+        company_data = context.company_data or {}
+        
+        # Handle both dict and CompanyContext inputs
+        if isinstance(company_data, dict):
+            company_context = CompanyContext.from_dict(company_data)
+        else:
+            company_context = company_data
+
+        # Validate company context (requires company_url)
+        company_context.validate()
+
+        # Convert to prompt variables
+        prompt_context = company_context.to_prompt_context()
+
+        logger.debug(f"Keyword: '{primary_keyword}'")
+        logger.debug(f"Language: {language}")
+        logger.debug(f"Company: {prompt_context.get('company_name', 'Unknown')}")
+        logger.debug(f"Company URL: {prompt_context.get('company_url', 'Not provided')}")
+        logger.debug(f"Industry: {prompt_context.get('industry', 'Not specified')}")
+
+        # Validate inputs before building prompt
+        validate_prompt_inputs(primary_keyword, prompt_context)
+
+        # Build the simple prompt
         try:
-            prompt = get_main_article_prompt(
+            prompt = build_article_prompt(
                 primary_keyword=primary_keyword,
-                company_name=company_name,
-                company_info=company_info,
-                language=language,
-                country=country,
-                internal_links=internal_links,
-                competitors=competitors,
-                custom_instructions=custom_instructions,
-                system_prompts=system_prompts,
+                company_context=prompt_context,
+                language=language
             )
         except Exception as e:
-            logger.error(f"Failed to build market-aware prompt for {country}: {e}")
-            logger.info("Attempting fallback to US market template")
-            
-            try:
-                # First fallback: Use US market but keep original language
-                prompt = get_main_article_prompt(
-                    primary_keyword=primary_keyword,
-                    company_name=company_name,
-                    company_info=company_info,
-                    language=language,
-                    country="US",  # Safe fallback country
-                    internal_links=internal_links,
-                    competitors=competitors,
-                    custom_instructions=custom_instructions,
-                    system_prompts=system_prompts,
-                )
-                logger.warning(f"Successfully generated fallback prompt using US market for {country}")
-            except Exception as fallback_error:
-                logger.error(f"US market fallback also failed: {fallback_error}")
-                logger.info("Attempting minimal safe prompt generation")
-                
-                try:
-                    # Final fallback: Minimal safe configuration
-                    prompt = get_main_article_prompt(
-                        primary_keyword=primary_keyword,
-                        company_name=company_name,
-                        company_info={},  # Empty company info
-                        language="en",  # Safe language
-                        country="US",  # Safe country
-                        internal_links="",  # No internal links
-                        competitors=[],  # No competitors
-                        custom_instructions="",  # No custom instructions
-                        system_prompts=[],  # No system prompts
-                    )
-                    logger.warning("Generated minimal safe prompt - some features may be missing")
-                except Exception as final_error:
-                    logger.critical(f"All prompt generation attempts failed: {final_error}")
-                    raise ValueError(f"Unable to generate any prompt - system error: {final_error}")
+            logger.error(f"Failed to build prompt: {e}")
+            raise ValueError(f"Unable to generate prompt: {e}")
 
-        # Simple validation
-        if not prompt or len(prompt.strip()) < 1000:
-            raise ValueError("Generated prompt is too short or empty")
-        
-        logger.info(f"✅ Market-aware prompt generated successfully for {country}")
+        # Validate generated prompt
+        if not prompt or len(prompt.strip()) < 500:
+            raise ValueError(f"Generated prompt is too short ({len(prompt)} chars, expected > 500)")
 
-        # Store basic market information in context
-        # Note: MARKET_CONFIG was removed in favor of universal standards
-        # Using UNIVERSAL_STANDARDS instead
-        from ..prompts.main_article import UNIVERSAL_STANDARDS
-        market_profile_data = {
-            "country": country,
-            "language": language,
-            "target_word_count": UNIVERSAL_STANDARDS["word_count_target"],
-            "min_word_count": int(UNIVERSAL_STANDARDS["min_word_count"]),
-            "authorities": UNIVERSAL_STANDARDS.get("authorities", "Industry experts and authoritative sources")
-        }
+        logger.info(f"✅ Simple prompt generated successfully")
+        logger.info(f"   Length: {len(prompt)} characters")
+        logger.info(f"   Language: {language}")
+        logger.info(f"   Keyword: '{primary_keyword}'")
+        logger.info(f"   Company: '{prompt_context.get('company_name', 'Unknown')}'")
 
         # Store in context
         context.prompt = prompt
-        context.target_market = country
-        context.market_profile = market_profile_data
-
-        # Log metrics
-        prompt_length = len(prompt)
-        logger.info(f"✅ Market-specific prompt built successfully")
-        logger.info(f"   Length: {prompt_length} characters")
-        logger.info(f"   Target Market: {country}")
-        logger.info(f"   Market Profile: {'Loaded' if market_profile_data else 'Failed to load'}")
-        logger.info(f"   Keyword: '{primary_keyword}'")
-        logger.info(f"   Company: '{company_name}'")
-        logger.info(f"   Language: {language}")
+        context.company_context = company_context
+        context.language = language
 
         return context
 
     def _validate_prompt(self, prompt: str) -> None:
         """
-        Basic prompt validation for test compatibility.
+        Basic prompt validation.
         
         Args:
             prompt: Prompt string to validate
@@ -201,24 +138,9 @@ class PromptBuildStage(Stage):
         if not prompt or len(prompt.strip()) == 0:
             raise ValueError("Prompt is empty")
         
-        # Check for required sections
-        required_sections = [
-            "*** INPUT ***",
-            "*** TASK ***", 
-            '"Headline"',
-            '"Sources"',
-            "```json"
-        ]
-        
-        missing = []
-        for section in required_sections:
-            if section not in prompt:
-                missing.append(section)
-        
-        if missing:
-            raise ValueError(f"Prompt missing required sections: {', '.join(missing)}")
-        
-        # Check minimum length - but prioritize missing sections error
-        if len(prompt) < 2000 and not missing:
-            raise ValueError(f"Prompt too short ({len(prompt)} chars, expected > 2000)")
+        if len(prompt) < 500:
+            raise ValueError(f"Prompt too short ({len(prompt)} chars, expected > 500)")
 
+        # Check for basic content
+        if "Write a comprehensive" not in prompt and "write" not in prompt.lower():
+            raise ValueError("Prompt doesn't appear to contain writing instructions")
