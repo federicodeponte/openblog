@@ -136,6 +136,26 @@ ARTICLE REQUIREMENTS:
 - Include introduction, main sections, and conclusion
 - Make it engaging and informative
 
+CRITICAL CITATION REQUIREMENTS:
+- MANDATORY: Include citations in 70%+ of paragraphs (minimum 2 citations per paragraph)
+- Use natural attribution format: "according to [Source Name]", "based on [Study Name]", "[Expert Name] reports that"
+- Combine with academic format for key statistics: "According to Gartner [1]", "HubSpot research shows [2]"
+- Target 8-12 total citations for optimal balance of authority and performance
+- Cite statistics, studies, expert opinions, and industry data
+- Every major claim must be backed by a credible source
+
+SECTION HEADER REQUIREMENTS:
+- MANDATORY: Include 2+ question-format section headers
+- Examples: "What is...", "How does...", "Why should...", "When can..."
+- Mix question headers with declarative headers for variety
+- Question headers improve content discoverability
+
+CONVERSATIONAL TONE REQUIREMENTS:
+- Use conversational language throughout ("you", "your", direct address)
+- Include rhetorical questions to engage readers
+- Use transitional phrases like "Let's explore...", "Consider this...", "Here's why..."
+- Write as if speaking directly to the reader
+
 IMPORTANT GUIDELINES:
 - Write from an authoritative, knowledgeable perspective
 - Include relevant statistics and data when possible

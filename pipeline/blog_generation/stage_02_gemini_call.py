@@ -103,10 +103,12 @@ You are a professional content writer. CRITICAL RULES:
 - Use **bold** for emphasis (NOT HTML)
 - Use - or * for lists (NOT HTML)
 - Separate paragraphs with blank lines (NOT HTML tags)
-- NEVER use academic citations like [1], [2], [3]
-- Use natural language attribution: "according to X study"
+- MANDATORY: Use natural attribution combined with academic citations for key facts
+- Target 8-12 total citations: mix of "according to [Source]" and numbered "[1], [2]" for statistics
+- Include citations in 70%+ of paragraphs (minimum 2 per paragraph with citations)
 - NEVER use em dashes (—)
 - Use commas or parentheses instead
+- Write in conversational, engaging tone with direct reader address
 """
 
         raw_response = await self._generate_content_with_retry(
