@@ -767,7 +767,9 @@ class HTMLRenderer:
         Used by CitationLinker to link natural language citations
         like "according to IBM" or "Gartner reports".
         
-        Format expected: [N]: URL – Source Name Description
+        Format expected: 
+        - [N]: URL – Source Name Description  (URL first)
+        - [N]: Source Name Description – URL  (Description first)
         
         Returns:
             Dict mapping source names (lowercase) to URLs
@@ -777,9 +779,20 @@ class HTMLRenderer:
         
         source_name_map = {}
         
-        # Pattern: [N]: URL – Description (extract source name from description)
-        pattern = r'\[(\d+)\]:\s*(https?://[^\s]+)\s*[–-]\s*(.+?)(?=\n\[|\n*$)'
-        matches = re.findall(pattern, sources, re.MULTILINE | re.DOTALL)
+        # Pattern 1: [N]: URL – Description (URL first)
+        pattern1 = r'\[(\d+)\]:\s*(https?://[^\s]+)\s*[–-]\s*(.+?)(?=\n\[|\n*$)'
+        
+        # Pattern 2: [N]: Description – URL (Description first) - COMMON FORMAT
+        pattern2 = r'\[(\d+)\]:\s*(.+?)\s*[–-]\s*(https?://[^\s<]+)'
+        
+        # Try pattern 1 first
+        matches = re.findall(pattern1, sources, re.MULTILINE | re.DOTALL)
+        
+        # If no matches, try pattern 2 (swap url and description positions)
+        if not matches:
+            matches_alt = re.findall(pattern2, sources, re.MULTILINE | re.DOTALL)
+            # Reformat to match expected order: (num, url, description)
+            matches = [(m[0], m[2], m[1]) for m in matches_alt]
         
         for match in matches:
             try:

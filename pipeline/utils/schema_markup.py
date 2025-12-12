@@ -41,14 +41,20 @@ def generate_article_schema(
         # Remove em/en dashes (replace with hyphen, not comma - comma corrupts ranges like "25-45%")
         cleaned = cleaned.replace("—", " - ")  # Em dash
         cleaned = cleaned.replace("–", "-")     # En dash (for ranges)
-        # Remove robotic phrases
-        cleaned = cleaned.replace("Here's how ", "")
-        cleaned = cleaned.replace("Here's what ", "")
-        cleaned = cleaned.replace("Key points: ", "")
+        # Remove robotic phrases and duplicate summary patterns
+        robotic_patterns = [
+            "Here's how ", "Here's what ", "Key points: ",
+            "Here are key points:", "Here are the key points:",
+            "Important considerations:", "Key benefits include:",
+            "matters:", ". Also,,",
+        ]
+        for pattern in robotic_patterns:
+            cleaned = cleaned.replace(pattern, "")
         # Strip citation markers [N] - CRITICAL FIX
         import re
         cleaned = re.sub(r'\[\d+\]', '', cleaned)
-        # Clean up double spaces
+        # Clean up double spaces and punctuation issues
+        cleaned = re.sub(r',\s*,', ',', cleaned)
         cleaned = re.sub(r'\s+', ' ', cleaned)
         return cleaned.strip()
     
