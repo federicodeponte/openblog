@@ -144,7 +144,16 @@ class HTMLRenderer:
             logger.info(f"✅ Citation map used for inline links with {len(citation_map)} entries")
         else:
             logger.warning(f"⚠️  No citation map available (Sources length: {len(sources)})")
+        # TOC is flattened by stage_10: toc["01"] becomes toc_01
+        # Reconstruct the TOC dict from flattened keys
         toc = article.get("toc", {})
+        if not toc:
+            # Try to reconstruct from flattened keys (toc_01, toc_02, etc.)
+            toc = {}
+            for i in range(1, 10):
+                key = f"toc_{i:02d}"
+                if key in article and article[key]:
+                    toc[key] = article[key]
         # Use passed faq_items if provided, otherwise extract from article
         if faq_items is None:
             faq_items = article.get("faq_items", [])

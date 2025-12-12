@@ -73,14 +73,19 @@ class TableOfContents(BaseModel):
 
     def to_dict(self) -> Dict[str, str]:
         """
-        Convert to dictionary format {toc_01: label, toc_02: label, ...}.
+        Convert to dictionary format {01: label, 02: label, ...}.
+
+        NOTE: Uses simple numeric keys (01, 02) not toc_01, toc_02
+        because stage_10_cleanup flattens nested dicts with prefix.
+        So toc["01"] becomes toc_01 after flattening.
 
         Returns:
-            Dictionary with toc_XX keys and short labels as values.
+            Dictionary with numeric keys and short labels as values.
         """
         result = {}
         for entry in self.entries:
-            result[entry.toc_key] = entry.short_label
+            # Use simple numeric key, will become toc_01 after flattening
+            result[f"{entry.section_num:02d}"] = entry.short_label
         return result
 
     def get_entry(self, section_num: int) -> Optional[TOCEntry]:
