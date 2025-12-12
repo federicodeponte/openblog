@@ -98,17 +98,49 @@ class MarkdownProcessor:
         """
         Fix Gemini's mixed format output.
         
-        Gemini sometimes outputs:
+        Gemini sometimes outputs lists without proper blank line separation,
+        which the markdown library requires. This preprocessor fixes that.
+        
+        Also handles:
         <p>Introduction text:
         - Item one
         - Item two
         </p>
-        
-        This needs to be split properly.
         """
-        # Pattern: <p>...text...: followed by dash list</p>
-        # Split into <p>text:</p><ul><li>items</li></ul>
+        # Fix 1: Add blank line before dash lists that follow text
+        # Pattern: text (not starting with -) followed by newline + dash list
+        content = re.sub(
+            r'([^\n-])(\n)(- )',
+            r'\1\n\n\3',  # Add extra newline
+            content
+        )
         
+        # Fix 2: Add blank line before dash lists that follow colons
+        # Pattern: colon followed by dash list (with or without newline)
+        content = re.sub(
+            r':(\s*\n?\s*)(- )',
+            r':\n\n\2',
+            content
+        )
+        
+        # Fix 3: Handle inline dash lists (text: - item - item - item)
+        # Convert to proper list with newlines
+        def expand_inline_list(match):
+            intro = match.group(1)
+            items_str = match.group(2)
+            items = re.findall(r'-\s+([^-]+?)(?=\s+-\s+|$)', items_str)
+            if items and len(items) >= 2:
+                items_formatted = '\n'.join(f'- {item.strip()}' for item in items if item.strip())
+                return f'{intro}\n\n{items_formatted}\n'
+            return match.group(0)
+        
+        content = re.sub(
+            r'([^-\n]+:)\s*((?:-\s+[^-\n]+\s*){2,})',
+            expand_inline_list,
+            content
+        )
+        
+        # Fix 4: Handle HTML paragraphs containing dash lists
         def fix_paragraph_with_list(match):
             """Extract list from paragraph and format properly."""
             full_content = match.group(1)
@@ -117,7 +149,7 @@ class MarkdownProcessor:
             list_start = re.search(r'[:.]\s*\n?\s*-\s+', full_content)
             if list_start:
                 text_part = full_content[:list_start.end() - len(list_start.group()) + 1].strip()
-                list_part = full_content[list_start.end() - 2:].strip()  # Include the first dash
+                list_part = full_content[list_start.end() - 2:].strip()
                 
                 # Convert dash list to proper HTML
                 items = re.findall(r'-\s+([^\n-]+)', list_part)
@@ -127,7 +159,6 @@ class MarkdownProcessor:
             
             return match.group(0)
         
-        # Fix paragraphs containing dash lists
         content = re.sub(
             r'<p>([^<]*?(?:[:.])\s*\n?\s*-\s+[^<]+)</p>',
             fix_paragraph_with_list,
