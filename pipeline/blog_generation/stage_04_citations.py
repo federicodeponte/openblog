@@ -462,19 +462,11 @@ class CitationsStage(Stage):
                             logger.warning(f"   ⚠️  {issue}")
                             
                 else:
-                    # Citation failed validation
-                    logger.error(f"❌ Citation [{original_citation.number}]: Validation failed")
+                    # Citation failed validation - FILTER IT OUT instead of marking as unverified
+                    logger.warning(f"⚠️ Filtering out Citation [{original_citation.number}]: Validation failed")
                     for issue in validation_result.issues:
-                        logger.error(f"   {issue}")
-                    
-                    # Keep original citation but mark it as potentially problematic
-                    # The user can decide whether to use it
-                    problematic_citation = Citation(
-                        number=original_citation.number,
-                        url=validation_result.url or original_citation.url,
-                        title=f"[UNVERIFIED] {validation_result.title or original_citation.title}"
-                    )
-                    validated_list.citations.append(problematic_citation)
+                        logger.warning(f"   {issue}")
+                    # Skip adding this citation - don't show unverified sources to users
             
             # Renumber citations
             for i, citation in enumerate(validated_list.citations, 1):

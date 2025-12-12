@@ -327,7 +327,7 @@ class HTMLRenderer:
     <main class="container">
         {f'<img src="{HTMLRenderer._escape_attr(image_url)}" alt="{HTMLRenderer._escape_attr(image_alt)}" class="featured-image">' if image_url else ''}
 
-        {f'<div class="intro">{HTMLRenderer._linkify_citations(intro, citation_map, url_link_count)}</div>' if intro else ''}
+        {f'<div class="intro">{HTMLRenderer._linkify_citations(HTMLRenderer._cleanup_content(intro), citation_map, url_link_count)}</div>' if intro else ''}
 
         {HTMLRenderer._render_toc(toc)}
 
