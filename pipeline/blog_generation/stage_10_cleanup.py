@@ -1196,6 +1196,9 @@ class CleanupStage(Stage):
         for i in range(1, 10):
             title = article.get(f"section_{i:02d}_title", "")
             if title:
+                # CRITICAL FIX: Strip <p> tags BEFORE checking if it's a question
+                import re
+                title = re.sub(r'</?p>', '', title).strip()
                 title_lower = title.lower()
                 first_word = title_lower.split()[0] if title_lower.split() else ""
                 # Count as question if it has a question pattern, ends with ?, or STARTS with a question word
