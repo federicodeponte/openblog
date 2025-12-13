@@ -550,7 +550,9 @@ class HTMLRenderer:
                 # "What is What Role Does X Play" → "What Role Does X Play"
                 double_prefix_patterns = [
                     (r'^What is Why is\b', 'Why is'),
+                    (r'^What is Why\b', 'Why'),  # "What is Why Automation" → "Why Automation"
                     (r'^What is How does\b', 'How does'),
+                    (r'^What is How\b', 'How'),  # "What is How to" → "How to"
                     (r'^What is What Role\b', 'What Role'),
                     (r'^What is What are\b', 'What are'),
                     (r'^What is What is\b', 'What is'),
@@ -1394,7 +1396,9 @@ class HTMLRenderer:
             (r'Where can Where can\b', 'Where can'),
             # Cross-prefix mismatches (e.g., "What is Why is X?" → "Why is X?")
             (r'What is Why is\b', 'Why is'),
+            (r'What is Why\b', 'Why'),  # "What is Why Automation" → "Why Automation"
             (r'What is How does\b', 'How does'),
+            (r'What is How\b', 'How'),  # "What is How to" → "How to"
             (r'What is What Role\b', 'What Role'),
             (r'What is What are\b', 'What are'),
             (r'How does What is\b', 'What is'),
@@ -2381,6 +2385,98 @@ class HTMLRenderer:
         
         # Match complete <ul>...</ul> blocks and convert if needed
         content = re.sub(r'<ul>(.*?)</ul>', convert_list_if_numbered, content, flags=re.DOTALL)
+        
+        # ========================================================================
+        # CRITICAL ROOT-LEVEL FIXES (Deep cleanup for production quality)
+        # ========================================================================
+        
+        # FIX 1: Missing space around parentheses
+        # "lifecycle(creation, rotation, and revocation)is" → "lifecycle (creation, rotation, and revocation) is"
+        content = re.sub(r'(\w)\(', r'\1 (', content)  # Add space before (
+        content = re.sub(r'\)(\w)', r') \1', content)  # Add space after )
+        
+        # FIX 2: Missing space after comma
+        # "functions,running" → "functions, running"
+        content = re.sub(r',([a-zA-Z])', r', \1', content)
+        
+        # FIX 3: Duplicate back-to-back citations to same URL
+        # Pattern: <a href="URL">Text</a></p><p><a href="URL">Same Text</a>
+        content = re.sub(
+            r'(<a[^>]*href="([^"]+)"[^>]*>[^<]+</a>)\s*</p>\s*<p>\s*(<a[^>]*href="\2"[^>]*>[^<]+</a>)',
+            r'\1',
+            content
+        )
+        # Also remove standalone citation paragraph at end of section
+        # Pattern: </p><p><a href="URL" class="citation">Source Name</a>.</p>
+        content = re.sub(
+            r'</p>\s*<p>\s*<a[^>]*class="citation"[^>]*>[^<]+</a>\.?\s*</p>',
+            '</p>',
+            content
+        )
+        # Also catch: <p><a class="citation">Name</a>.</p> as standalone
+        content = re.sub(
+            r'<p>\s*<a[^>]*class="citation"[^>]*>[^<]+</a>\.?\s*</p>',
+            '',
+            content
+        )
+        
+        # FIX 4: Missing periods at end of paragraphs (before </p>)
+        # Pattern: "text without punctuation</p>" → "text without punctuation.</p>"
+        # Only add period if last char is a letter or closing tag
+        content = re.sub(r'([a-zA-Z])(\s*</p>)', r'\1.\2', content)
+        content = re.sub(r'(</a>)(\s*</p>)', r'\1.\2', content)
+        # But remove double periods: "..</p>" → ".</p>"
+        content = re.sub(r'\.{2,}</p>', '.</p>', content)
+        
+        # FIX 5: Truncated list item with text after </ul>
+        # Pattern: </ul>By automating → </ul><p>By automating
+        content = re.sub(r'</ul>([A-Z][^<]{20,})</p>', r'</ul><p>\1</p>', content)
+        # Pattern: </li></ul>Text → </li></ul><p>Text
+        content = re.sub(r'</li></ul>([A-Z])', r'</li></ul><p>\1', content)
+        
+        # FIX 5b: Text directly after </p> without wrapper
+        # Pattern: </p>This allows your analysts → </p><p>This allows your analysts
+        content = re.sub(r'</p>([A-Z][a-z][^<]{15,})', r'</p><p>\1', content)
+        # Also handle: </p> This allows (with space)
+        content = re.sub(r'</p>\s+([A-Z][a-z][^<]{15,})', r'</p><p>\1', content)
+        
+        # FIX 6: <p> nested inside <li> (malformed)
+        # Pattern: <li>text.<p>more text → <li>text. More text</li><p>more text
+        content = re.sub(r'(<li>[^<]+)<p>([^<]+)', r'\1</li></ul><p>\2', content)
+        # Pattern: </li><li>text.<p>By → close the list properly
+        content = re.sub(r'<li>([^<]*\.)(<p>[A-Z])', r'<li>\1</li></ul>\2', content)
+        
+        # FIX 7: Truncated list items (items ending without proper punctuation and under 80 chars)
+        # Pattern: <li>Use SAST tools to check code commits in real</li>
+        # These are clearly cut-off sentences - remove them
+        content = re.sub(
+            r'<li>([^<]{10,60})\s+(in|to|for|with|and|the|a|an|of|on|at|by)\s*</li>',
+            '',
+            content
+        )
+        
+        # FIX 8: Remove trailing </li></ul> after </p> with no opening <li>
+        # Pattern: text</p></li></ul> → text</p>
+        content = re.sub(r'</p>\s*</li>\s*</ul>', '</p>', content)
+        
+        # FIX 9: Fix orphaned </ul> closing tags (no matching <ul>)
+        # Count opens and closes to detect orphans
+        def fix_orphan_list_closes(html: str) -> str:
+            """Remove orphaned </ul> or </ol> tags that have no matching open tag."""
+            for tag in ['ul', 'ol']:
+                opens = len(re.findall(f'<{tag}[^>]*>', html))
+                closes = len(re.findall(f'</{tag}>', html))
+                if closes > opens:
+                    # Remove excess closing tags (from the end)
+                    excess = closes - opens
+                    for _ in range(excess):
+                        # Find and remove the last orphaned closing tag
+                        html = re.sub(f'</{tag}>(?!.*</{tag}>)', '', html[::-1], count=1)[::-1]
+            return html
+        
+        content = fix_orphan_list_closes(content)
+        
+        logger.info("🔧 Applied root-level fixes (spacing, punctuation, malformed lists)")
         
         # FINAL PASS: Run through consolidated cleanup pipeline for any remaining issues
         # This catches patterns that might have been missed by earlier regex operations
