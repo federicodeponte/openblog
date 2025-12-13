@@ -733,7 +733,10 @@ Be GENEROUS - add 2-3 citations, 2-3 conversational phrases, and 1-2 question pa
         
         # Optimize Direct Answer if needed (CRITICAL - worth 25 points!)
         # Check: length, citation, AND keyword (all must be present)
-        if direct_answer and (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da or not has_keyword_in_da):
+        needs_da_optimization = direct_answer and (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da or not has_keyword_in_da)
+        
+        if needs_da_optimization:
+            logger.info(f"   🔧 Direct Answer needs optimization: {direct_answer_words} words, Citation={'✅' if has_citation_in_da else '❌'}, Keyword={'✅' if has_keyword_in_da else '❌'}")
             try:
                 primary_keyword = context.job_config.get("primary_keyword", "") if context.job_config else ""
                 da_prompt = f"""{aeo_prompt}
@@ -742,12 +745,13 @@ DIRECT ANSWER TO OPTIMIZE:
 {direct_answer}
 
 CRITICAL: Direct Answer is worth 25 AEO points. It MUST:
-1. Be 40-60 words (currently {direct_answer_words} words)
+1. Be 40-60 words (currently {direct_answer_words} words - {'TOO LONG' if direct_answer_words > 70 else 'TOO SHORT' if direct_answer_words < 30 else 'OK'})
 2. Include primary keyword: "{primary_keyword}"
 3. Include natural language citation: "According to [Source]..." or "[Source] reports..."
 
-Return optimized Direct Answer meeting ALL requirements above.
+Return optimized Direct Answer meeting ALL requirements above. Be concise - 40-60 words total.
 """
+                logger.debug(f"   📤 Sending Direct Answer optimization request to Gemini...")
                 response = await gemini_client.generate_content(
                     prompt=da_prompt,
                     response_schema=None
@@ -759,11 +763,15 @@ Return optimized Direct Answer meeting ALL requirements above.
                     if 30 <= optimized_da_words <= 80:  # Allow slight overflow
                         article_dict['Direct_Answer'] = optimized_da
                         optimized_count += 1
-                        logger.info(f"   ✅ Optimized Direct_Answer ({direct_answer_words} → {optimized_da_words} words, added citation)")
+                        logger.info(f"   ✅ Optimized Direct_Answer ({direct_answer_words} → {optimized_da_words} words)")
                     else:
-                        logger.debug(f"   ⚠️ Direct_Answer: Optimized version has {optimized_da_words} words (target: 40-60)")
+                        logger.warning(f"   ⚠️ Direct_Answer: Optimized version has {optimized_da_words} words (target: 40-60) - REJECTED")
+                else:
+                    logger.warning(f"   ⚠️ Direct_Answer: Gemini returned empty response")
             except Exception as e:
-                logger.debug(f"   ⚠️ Direct_Answer: AEO optimization failed - {e}")
+                logger.error(f"   ❌ Direct_Answer: AEO optimization failed - {e}", exc_info=True)
+        else:
+            logger.debug(f"   ℹ️ Direct Answer already optimal: {direct_answer_words} words, Citation={'✅' if has_citation_in_da else '❌'}, Keyword={'✅' if has_keyword_in_da else '❌'}")
         
         if optimized_count > 0:
             logger.info(f"🚀 AEO optimization: Enhanced {optimized_count} fields")
