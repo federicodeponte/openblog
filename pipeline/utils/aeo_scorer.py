@@ -86,10 +86,12 @@ class AEOScorer:
             score += 10.0
             
             direct_answer = output.Direct_Answer
-            direct_answer_lower = direct_answer.lower()
+            # Strip HTML for accurate word count (HTML tags shouldn't count as words)
+            direct_answer_text = re.sub(r'<[^>]+>', '', direct_answer)
+            direct_answer_lower = direct_answer_text.lower()
             
             # Check length (40-60 words ideal)
-            word_count = len(direct_answer.split())
+            word_count = len(direct_answer_text.split())
             if 40 <= word_count <= 60:
                 score += 5.0
             elif 30 <= word_count < 40 or 60 < word_count <= 80:
@@ -100,11 +102,14 @@ class AEOScorer:
                 score += 5.0
             
             # Check if contains citation (academic [1] OR natural language)
-            has_academic_citation = re.search(r'\[\d+\]', direct_answer)
+            # NOTE: Academic citations are stripped in HTML renderer, so we check the original Direct_Answer field
+            # But for natural citations, we check the stripped text
+            has_academic_citation = re.search(r'\[\d+\]', direct_answer)  # Check original (before HTML renderer strips)
             has_natural_citation = any([
-                re.search(r'according to [A-Z]', direct_answer, re.IGNORECASE),
-                re.search(r'[A-Z][a-z]+ (reports?|states?|notes?|found)', direct_answer),
-                re.search(r'research (by|from) [A-Z]', direct_answer, re.IGNORECASE),
+                re.search(r'according to [A-Z]', direct_answer_text, re.IGNORECASE),
+                re.search(r'[A-Z][a-z]+ (reports?|states?|notes?|found)', direct_answer_text),  # Fixed: removed "that" requirement
+                re.search(r'[A-Z][a-z]+ reports?', direct_answer_text, re.IGNORECASE),  # Added: "Gartner reports" without "that"
+                re.search(r'research (by|from) [A-Z]', direct_answer_text, re.IGNORECASE),
             ])
             
             if has_academic_citation or has_natural_citation:
@@ -194,15 +199,22 @@ class AEOScorer:
         academic_citations = re.findall(r'\[\d+\]', all_content)
         
         # 2. Natural language citations (inline attribution)
+        # NOTE: Academic citations [N] are stripped in HTML renderer, so we only count natural citations here
+        # Patterns should match common citation formats without requiring "that"
         natural_citation_patterns = [
             r'according to [A-Z][a-z]+',
-            r'[A-Z][a-z]+ reports? that',
-            r'[A-Z][a-z]+ states? that',
-            r'[A-Z][a-z]+ notes? that',
+            r'[A-Z][a-z]+ reports?',  # Fixed: removed "that" requirement - "Gartner reports" is valid
+            r'[A-Z][a-z]+ reports? that',  # Keep for "reports that" pattern
+            r'[A-Z][a-z]+ states?',  # Fixed: removed "that" requirement
+            r'[A-Z][a-z]+ states? that',  # Keep for "states that" pattern
+            r'[A-Z][a-z]+ notes?',  # Fixed: removed "that" requirement
+            r'[A-Z][a-z]+ notes? that',  # Keep for "notes that" pattern
             r'[A-Z][a-z]+ predicts?',
             r'[A-Z][a-z]+ estimates?',
-            r'[A-Z][a-z]+ found that',
-            r'[A-Z][a-z]+ shows? that',
+            r'[A-Z][a-z]+ found',  # Fixed: removed "that" requirement
+            r'[A-Z][a-z]+ found that',  # Keep for "found that" pattern
+            r'[A-Z][a-z]+ shows?',  # Fixed: removed "that" requirement
+            r'[A-Z][a-z]+ shows? that',  # Keep for "shows that" pattern
             r'[A-Z][a-z]+ highlights?',
             r'research by [A-Z][a-z]+',
             r'report by [A-Z][a-z]+',
@@ -315,34 +327,43 @@ class AEOScorer:
         ]
         vague_count = sum(1 for pattern in vague_patterns if re.search(pattern, content_lower))
         
-        # Direct statements
+        # Direct statements (more specific patterns to avoid false positives)
+        # Use word boundaries to avoid matching "is" in "this" or "are" in "care"
         direct_patterns = [
-            r"is ",
-            r"are ",
-            r"does ",
-            r"provides ",
-            r"enables ",
-            r"allows ",
-            r"helps ",
+            r"\bis\b",  # Fixed: word boundary
+            r"\bare\b",  # Fixed: word boundary
+            r"\bdoes\b",  # Fixed: word boundary
+            r"\bprovides\b",
+            r"\benables\b",
+            r"\ballows\b",
+            r"\bhelps\b",
+            r"\bensures\b",  # Added: more direct action verbs
+            r"\bguarantees\b",
+            r"\bdelivers\b",
         ]
         direct_count = sum(1 for pattern in direct_patterns if re.search(pattern, content_lower))
         
-        if direct_count > vague_count * 2:
+        # Only score if we have significantly more direct statements than vague ones
+        # This prevents false positives from common words like "is" and "are"
+        if vague_count == 0 and direct_count >= 10:  # No vague language, many direct statements
             score += 5.0
-        elif direct_count > vague_count:
+        elif direct_count > vague_count * 3:  # Much more direct than vague
+            score += 5.0
+        elif direct_count > vague_count * 2:  # More direct than vague
             score += 3.0
-        elif direct_count > 0:
+        elif direct_count > vague_count:  # Somewhat more direct
             score += 1.0
         
         # Natural question patterns (enhanced)
+        # Use word boundaries to avoid false positives like "somewhat is" matching "what is"
         question_patterns = [
-            r"what is",
-            r"how do",
-            r"why does",
-            r"when should",
-            r"where can",
-            r"how can",
-            r"what are",
+            r"\bwhat is\b",
+            r"\bhow do\b",
+            r"\bwhy does\b",
+            r"\bwhen should\b",
+            r"\bwhere can\b",
+            r"\bhow can\b",
+            r"\bwhat are\b",
         ]
         question_count = sum(1 for pattern in question_patterns if re.search(pattern, content_lower))
         if question_count >= 5:
@@ -439,18 +460,27 @@ class AEOScorer:
         # Trustworthiness: Source credibility
         if output.Sources and output.Sources.strip():
             # Check if sources are from credible domains
-            credible_domains = [".edu", ".gov", ".org", "wikipedia", "research", "study"]
+            # Include both academic (.edu, .gov) AND tech industry sources (.com)
+            credible_domains = [
+                ".edu", ".gov", ".org",  # Academic/government
+                "gartner.com", "forrester.com", "mckinsey.com", "ibm.com", "microsoft.com",  # Tech industry
+                "nist.gov", "owasp.org", "sans.org",  # Security standards
+                "wikipedia", "research", "study"
+            ]
             source_lines = [line.strip() for line in output.Sources.split('\n') if line.strip()]
             credible_count = sum(
                 1 for line in source_lines
                 if any(domain in line.lower() for domain in credible_domains)
             )
+            # Also give credit for multiple sources (even if not in credible list)
             if credible_count >= 2:
                 score += 3.0
             elif credible_count >= 1:
                 score += 1.5
             elif len(source_lines) >= 5:
                 score += 1.0  # Partial credit for multiple sources
+            elif len(source_lines) >= 3:
+                score += 0.5  # Minimal credit for some sources
         
         return min(score, 15.0)
     
