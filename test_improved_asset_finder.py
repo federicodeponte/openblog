@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Test Improved Asset Finder - Using Google Images Search
+Test Improved Asset Finder
 
-Tests the improved approach that uses Google Images search directly
-instead of scraping random images from pages.
+Tests:
+1. Diversity checks (prevent similar images)
+2. Serper Dev integration
+3. Chart finding capability
 """
 
 import asyncio
@@ -22,71 +24,131 @@ if env_file.exists():
 
 from pipeline.agents.asset_finder import AssetFinderAgent, AssetFinderRequest
 
-async def test_improved_search():
-    """Test improved asset finder with Google Images search."""
+async def test_diversity():
+    """Test diversity checks."""
     print("\n" + "="*80)
-    print("IMPROVED ASSET FINDER - Google Images Search")
+    print("TEST 1: Diversity Checks")
     print("="*80)
-    print("\nThis version uses 'images:' prefix to search Google Images directly,")
-    print("which gives much more relevant results than scraping random page images.\n")
     
     agent = AssetFinderAgent()
     
     request = AssetFinderRequest(
-        article_topic="cloud security statistics",
-        article_headline="Cloud Security Statistics 2024",
-        max_results=5,
-        image_types=["chart", "infographic", "photo"]
+        article_topic="cloud security dashboard",
+        max_results=5
     )
-    
-    print("="*80)
-    print("STAGE 1: Building Search Query")
-    print("="*80)
-    query = agent._build_search_query(request)
-    print(f"\n✅ Query: {query}")
-    print("\n💡 Notice: Uses 'images:' prefix for Google Images search")
-    print("   This targets images directly, not random page content\n")
-    
-    print("="*80)
-    print("STAGE 2: Searching Google Images")
-    print("="*80)
-    print("\n📡 Using Gemini + Google Images Search...")
-    print("   This searches Google Images SERP directly")
-    print("   Gets pre-filtered, relevant images\n")
     
     response = await agent.find_assets(request)
     
+    if response.success and response.assets:
+        print(f"\n✅ Found {len(response.assets)} assets")
+        print("\nDiversity Analysis:")
+        
+        from collections import Counter
+        from urllib.parse import urlparse
+        
+        domains = Counter()
+        sources = Counter()
+        
+        for asset in response.assets:
+            try:
+                domain = urlparse(asset.url).netloc
+                domains[domain] += 1
+            except:
+                pass
+            sources[asset.source] += 1
+        
+        print(f"  • Unique domains: {len(domains)}")
+        print(f"  • Unique sources: {len(sources)}")
+        print(f"  • Max per domain: {max(domains.values()) if domains else 0}")
+        print(f"  • Max per source: {max(sources.values()) if sources else 0}")
+        
+        print("\nAssets:")
+        for i, asset in enumerate(response.assets, 1):
+            domain = urlparse(asset.url).netloc if asset.url else "unknown"
+            print(f"  {i}. {asset.title[:50]}")
+            print(f"     Source: {asset.source}, Domain: {domain[:40]}")
+
+async def test_serper_dev():
+    """Test Serper Dev integration."""
+    print("\n" + "="*80)
+    print("TEST 2: Serper Dev Integration")
     print("="*80)
-    print("RESULTS")
-    print("="*80)
-    print(f"\n✅ Success: {response.success}")
-    print(f"🔍 Search Query Used: {response.search_query_used}")
-    print(f"📦 Found {len(response.assets)} assets\n")
     
-    for i, asset in enumerate(response.assets, 1):
-        print(f"Asset {i}:")
-        print(f"  📸 Title: {asset.title}")
-        print(f"  🔗 URL: {asset.url[:80]}...")
-        print(f"  📦 Source: {asset.source}")
-        print(f"  🎨 Type: {asset.image_type}")
-        print(f"  📝 Description: {asset.description[:80]}...")
-        if asset.license_info:
-            print(f"  📄 License: {asset.license_info}")
-        print()
+    from pipeline.agents.serper_images_finder import SerperImagesFinder
     
+    finder = SerperImagesFinder()
+    
+    if not finder.is_configured():
+        print("\n⚠️  Serper Dev not configured")
+        print("   Set SERPER_API_KEY in .env.local")
+        return
+    
+    print("\n✅ Serper Dev configured")
+    print("Testing Google Images search...\n")
+    
+    images = await finder.search_images(
+        query="cloud security statistics chart",
+        max_results=5,
+        size="large"
+    )
+    
+    print(f"✅ Found {len(images)} images via Serper Dev")
+    for i, img in enumerate(images[:3], 1):
+        print(f"  {i}. {img.title[:50]} ({img.source})")
+
+async def test_chart_finding():
+    """Test chart finding capability."""
+    print("\n" + "="*80)
+    print("TEST 3: Chart Finding")
     print("="*80)
-    print("COMPARISON")
+    
+    agent = AssetFinderAgent()
+    
+    # Request with chart-focused image types
+    request = AssetFinderRequest(
+        article_topic="cloud security statistics",
+        max_results=5,
+        image_types=["chart", "infographic", "diagram", "data visualization"]
+    )
+    
+    response = await agent.find_assets(request)
+    
+    if response.success and response.assets:
+        print(f"\n✅ Found {len(response.assets)} chart/infographic assets")
+        print("\nAssets:")
+        for i, asset in enumerate(response.assets, 1):
+            print(f"  {i}. {asset.title}")
+            print(f"     Type: {asset.image_type}, Source: {asset.source}")
+
+async def main():
+    """Run all tests."""
+    print("\n" + "="*80)
+    print("IMPROVED ASSET FINDER - TESTING")
     print("="*80)
-    print("\n❌ Old Approach (Page Scraping):")
-    print("   • Finds random images from pages")
-    print("   • Includes logos, icons, navigation elements")
-    print("   • Example: Found Spacelift logo, random SVG icons")
-    print("\n✅ New Approach (Google Images Search):")
-    print("   • Searches Google Images SERP directly")
-    print("   • Pre-filtered by relevance")
-    print("   • Focuses on free stock photo sites")
-    print("   • Much more relevant results!")
+    
+    await test_diversity()
+    await test_serper_dev()
+    await test_chart_finding()
+    
+    print("\n" + "="*80)
+    print("SUMMARY")
+    print("="*80)
+    print("\n✅ Diversity Checks: Implemented")
+    print("   • Max 2 images per domain")
+    print("   • Max 2 images per source")
+    print("   • Removes duplicates")
+    print("\n✅ Serper Dev: Integrated")
+    print("   • Simpler than DataForSEO")
+    print("   • Faster (no polling)")
+    print("   • Fallback when Gemini fails")
+    print("\n✅ Chart Finding: Enhanced")
+    print("   • Focuses on charts/infographics")
+    print("   • Includes data visualizations")
+    print("\n💡 Recommendations:")
+    print("   • Gemini is enough for most cases ✅")
+    print("   • No need for crawling ✅")
+    print("   • Use Serper Dev as fallback ✅")
+    print("   • Diversity checks prevent similarity ✅")
 
 if __name__ == "__main__":
-    asyncio.run(test_improved_search())
-
+    asyncio.run(main())

@@ -358,7 +358,7 @@ class QualityRefinementStage(Stage):
         else:
             logger.info("   ℹ️ Regex cleanup: no changes needed")
         
-            return context
+        return context
         
     async def _gemini_full_review(self, context: ExecutionContext) -> ExecutionContext:
         """

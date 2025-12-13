@@ -88,6 +88,17 @@ class AssetFinderAgent:
             logger.warning(f"Imagen client initialization failed: {e}")
             self.imagen_client = None
         
+        # Initialize Serper Dev Google Images finder (fallback/enhancement)
+        self.serper_finder = None
+        try:
+            from .serper_images_finder import SerperImagesFinder
+            self.serper_finder = SerperImagesFinder()
+            if self.serper_finder.is_configured():
+                logger.info("✅ Serper Dev Google Images finder initialized (fallback available)")
+        except Exception as e:
+            logger.debug(f"Serper Dev finder not available: {e}")
+            self.serper_finder = None
+        
         # Initialize DataForSEO Google Images finder (fallback/enhancement)
         self.dataforseo_finder = None
         try:
@@ -95,8 +106,6 @@ class AssetFinderAgent:
             self.dataforseo_finder = GoogleImagesFinder()
             if self.dataforseo_finder.is_configured():
                 logger.info("✅ DataForSEO Google Images finder initialized (fallback available)")
-            else:
-                logger.info("⚠️  DataForSEO not configured - using Gemini only")
         except Exception as e:
             logger.debug(f"DataForSEO finder not available: {e}")
             self.dataforseo_finder = None
@@ -145,22 +154,45 @@ class AssetFinderAgent:
             # Step 2: Use Gemini with Google Search to find assets
             assets = await self._search_for_assets(search_query, request)
             
-            # Fallback to DataForSEO if Gemini returns no results
-            if not assets and self.dataforseo_finder and self.dataforseo_finder.is_configured():
-                print("\n⚠️  Gemini returned no results, trying DataForSEO Google Images API...")
-                try:
-                    clean_query = search_query.replace("images:", "").strip()
-                    images = await self.dataforseo_finder.search_images(
-                        query=clean_query,
-                        max_results=request.max_results,
-                        size="large",
-                        license="creativeCommons"
-                    )
-                    if images:
-                        print(f"✅ Found {len(images)} images via DataForSEO fallback")
-                        assets = self.dataforseo_finder.convert_to_found_assets(images, request.article_topic)
-                except Exception as e:
-                    logger.warning(f"DataForSEO fallback failed: {e}")
+            # Fallback to Serper Dev or DataForSEO if Gemini returns no results
+            if not assets:
+                # Try Serper Dev first (simpler, faster)
+                if self.serper_finder and self.serper_finder.is_configured():
+                    print("\n⚠️  Gemini returned no results, trying Serper Dev Google Images API...")
+                    try:
+                        clean_query = search_query.replace("images:", "").strip()
+                        images = await self.serper_finder.search_images(
+                            query=clean_query,
+                            max_results=request.max_results,
+                            size="large",
+                            license="creativeCommons"
+                        )
+                        if images:
+                            print(f"✅ Found {len(images)} images via Serper Dev fallback")
+                            assets = self.serper_finder.convert_to_found_assets(images, request.article_topic)
+                    except Exception as e:
+                        logger.warning(f"Serper Dev fallback failed: {e}")
+                
+                # Try DataForSEO as last resort
+                if not assets and self.dataforseo_finder and self.dataforseo_finder.is_configured():
+                    print("\n⚠️  Trying DataForSEO Google Images API...")
+                    try:
+                        clean_query = search_query.replace("images:", "").strip()
+                        images = await self.dataforseo_finder.search_images(
+                            query=clean_query,
+                            max_results=request.max_results,
+                            size="large",
+                            license="creativeCommons"
+                        )
+                        if images:
+                            print(f"✅ Found {len(images)} images via DataForSEO fallback")
+                            assets = self.dataforseo_finder.convert_to_found_assets(images, request.article_topic)
+                    except Exception as e:
+                        logger.warning(f"DataForSEO fallback failed: {e}")
+            
+            # Apply diversity checks to prevent too similar images
+            if assets:
+                assets = self._ensure_diversity(assets, request)
             
             if not assets:
                 logger.warning("No assets found")
@@ -613,4 +645,64 @@ Return ONLY a JSON array of assets, no other text:
             design_system["style"] = "creative vibrant"
         
         return design_system
+    
+    def _ensure_diversity(self, assets: List[FoundAsset], request: AssetFinderRequest) -> List[FoundAsset]:
+        """
+        Ensure diversity in found assets to prevent too similar images.
+        
+        Strategies:
+        1. Remove duplicate domains (max 2 per domain)
+        2. Ensure variety in image types
+        3. Spread across different sources
+        4. Remove very similar URLs
+        
+        Args:
+            assets: List of found assets
+            request: Original request
+            
+        Returns:
+            Filtered list with diversity ensured
+        """
+        if len(assets) <= 1:
+            return assets
+        
+        from collections import Counter
+        
+        # Track domains and sources
+        domain_count = Counter()
+        source_count = Counter()
+        seen_urls = set()
+        diverse_assets = []
+        
+        for asset in assets:
+            # Skip duplicates
+            if asset.url in seen_urls:
+                continue
+            seen_urls.add(asset.url)
+            
+            # Parse domain
+            try:
+                domain = urlparse(asset.url).netloc
+                # Limit to 2 images per domain
+                if domain_count[domain] >= 2:
+                    continue
+                domain_count[domain] += 1
+            except:
+                pass
+            
+            # Limit to 2 images per source
+            if source_count[asset.source] >= 2:
+                continue
+            source_count[asset.source] += 1
+            
+            diverse_assets.append(asset)
+            
+            # Stop if we have enough diverse assets
+            if len(diverse_assets) >= request.max_results:
+                break
+        
+        if len(diverse_assets) < len(assets):
+            logger.info(f"Applied diversity filter: {len(assets)} → {len(diverse_assets)} assets")
+        
+        return diverse_assets
 
