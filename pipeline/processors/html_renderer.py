@@ -16,8 +16,7 @@ from datetime import datetime
 
 from ..utils.schema_markup import generate_all_schemas, render_schemas_as_json_ld
 from ..models.output_schema import ArticleOutput
-# NOTE: Markdown conversion removed - we now use HTML-first approach from Stage 2
-# from .markdown_processor import convert_markdown_to_html
+# HTML-first approach: Stage 2 outputs HTML directly, no markdown conversion needed
 from .citation_linker import link_natural_citations, link_internal_articles
 from .content_cleanup_pipeline import cleanup_content as pipeline_cleanup
 
@@ -1399,11 +1398,10 @@ class HTMLRenderer:
         content = re.sub(r'\[\d+\]', '', content)  # Standalone [N]
         logger.info("🚫 Stripped all [N] academic citations (enforcing inline-only style)")
         
-        # STEP 0.2: CONVERT MARKDOWN TO HTML
-        # Gemini outputs **bold** and *italic* - convert to proper HTML
-        content = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', content)  # **bold** -> <strong>
-        content = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', content)  # *italic* -> <em>
-        logger.info("📝 Converted markdown **bold** and *italic* to HTML")
+        # STEP 0.2: DEFENSE-IN-DEPTH - Convert any stray markdown that slipped through
+        # Stage 2 now outputs HTML, but this catches edge cases for robustness
+        content = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', content)
+        content = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', content)
         
         # STEP 0.2b: FIX DOUBLE-PREFIXED TITLES (from broken question conversion)
         # "What is What is AI" → "What is AI"
