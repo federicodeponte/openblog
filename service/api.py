@@ -1893,6 +1893,7 @@ class ContentRefreshRequest(BaseModel):
     target_sections: Optional[List[int]] = Field(None, description="Optional: List of section indices to update (0-based). If not provided, updates all sections")
     output_format: str = Field("json", description="Output format: 'json', 'html', or 'markdown'")
     include_diff: bool = Field(False, description="If True, includes diff showing changes made (unified + HTML format)")
+    enable_web_search: bool = Field(False, description="Enable web search + URL context (like Stage 2) for research-heavy updates (e.g., updating statistics, finding latest data). Default: False (matches Stage 2b behavior)")
     
     @field_validator('content')
     @classmethod
@@ -2075,6 +2076,7 @@ async def refresh_content(refresh_request: ContentRefreshRequest, request: Reque
             content=parsed_content,
             instructions=refresh_request.instructions,
             target_sections=refresh_request.target_sections,
+            enable_web_search=refresh_request.enable_web_search,
         )
         
         # Count updated sections

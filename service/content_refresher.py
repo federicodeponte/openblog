@@ -211,6 +211,7 @@ class ContentRefresher:
         content: Dict[str, Any],
         instructions: List[str],
         target_sections: Optional[List[int]] = None,
+        enable_web_search: bool = False,
     ) -> Dict[str, Any]:
         """
         Refresh content based on instructions.
@@ -219,6 +220,7 @@ class ContentRefresher:
             content: Structured content dict
             instructions: List of prompts/instructions for changes
             target_sections: Optional list of section indices to update (None = all)
+            enable_web_search: Enable web search + URL context (like Stage 2) for research-heavy updates
         
         Returns:
             Updated content dict
@@ -234,7 +236,7 @@ class ContentRefresher:
         for i, section in enumerate(sections):
             if i in target_sections:
                 # Refresh this section
-                updated_section = await self._refresh_section(section, instructions)
+                updated_section = await self._refresh_section(section, instructions, enable_web_search=enable_web_search)
                 updated_sections.append(updated_section)
             else:
                 # Keep original
@@ -257,12 +259,18 @@ class ContentRefresher:
         self,
         section: Dict[str, Any],
         instructions: List[str],
+        enable_web_search: bool = False,
     ) -> Dict[str, Any]:
         """
         Refresh a single section based on instructions.
         
         Uses structured JSON output (response_schema) to prevent hallucinations.
         This is the same fix applied to blog generation in v4.0.
+        
+        Args:
+            section: Section dict with heading and content
+            instructions: List of instructions for changes
+            enable_web_search: Enable web search + URL context (like Stage 2) for research-heavy updates
         """
         heading = section.get('heading', '')
         content_text = section.get('content', '')
@@ -327,11 +335,12 @@ CRITICAL: Output ONLY valid JSON. No other text or explanation."""
             )
             
             # Generate refreshed content with structured output
+            # response_mime_type is automatically set to "application/json" when response_schema is provided
+            # Enable web search + URL context if requested (like Stage 2 for research-heavy updates)
             response = await self.gemini_client.generate_content(
                 prompt,
-                enable_tools=False,  # No search needed for refresh
-                response_schema=refreshed_section_schema,
-                response_mime_type="application/json"
+                enable_tools=enable_web_search,  # Web search + URL context when needed
+                response_schema=refreshed_section_schema
             )
             
             # Parse JSON directly (no regex cleanup needed with structured output!)
