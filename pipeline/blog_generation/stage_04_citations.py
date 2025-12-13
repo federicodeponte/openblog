@@ -324,41 +324,41 @@ class CitationsStage(Stage):
         """
         Enhance citations with SPECIFIC URLs from Gemini's Google Search grounding.
         
-        The Sources field often contains generic URLs (gartner.com/newsroom)
-        but grounding_urls contains the ACTUAL source URLs that Gemini found.
+        GeminiClient resolves grounding URLs:
+        - 'url': Real resolved URL (e.g., https://checkpoint.com/.../cloud-security/)
+        - 'domain': Domain from title (e.g., "checkpoint.com")
+        - 'proxy_url': Original vertex proxy URL (kept for reference)
         
         Strategy:
-        1. For each citation, find a grounding URL from the same domain
-        2. If found, replace the generic URL with the specific one
+        1. For each citation, find a grounding URL where domain matches
+        2. Replace the citation URL with the real resolved URL
         3. If multiple matches, prefer the one with most similar title
         
         Args:
             citation_list: CitationList with potentially generic URLs
-            grounding_urls: List of {'url': str, 'title': str} from Gemini grounding
+            grounding_urls: List of {'url': str, 'domain': str, ...} from Gemini grounding
             
         Returns:
-            Enhanced CitationList with specific URLs where available
+            Enhanced CitationList with real, validated source URLs
         """
         if not grounding_urls:
             return citation_list
         
         # Build domain -> specific URLs map
+        # CRITICAL: Use TITLE as domain (not URL which is always vertexaisearch.cloud.google.com)
         domain_to_urls: Dict[str, List[Dict[str, str]]] = {}
         for grounding in grounding_urls:
             url = grounding.get('url', '')
-            if not url:
+            title = grounding.get('title', '')
+            if not url or not title:
                 continue
-            # Extract domain
-            try:
-                from urllib.parse import urlparse
-                domain = urlparse(url).netloc.lower().replace('www.', '')
-                if domain not in domain_to_urls:
-                    domain_to_urls[domain] = []
-                domain_to_urls[domain].append(grounding)
-            except Exception:
-                pass
+            # The title IS the domain (e.g., "sportingnews.com", "aljazeera.com")
+            domain = title.lower().replace('www.', '')
+            if domain not in domain_to_urls:
+                domain_to_urls[domain] = []
+            domain_to_urls[domain].append(grounding)
         
-        logger.info(f"   Grounding URL domains: {', '.join(domain_to_urls.keys())}")
+        logger.info(f"   Grounding URL domains (from titles): {', '.join(domain_to_urls.keys())}")
         
         enhanced_count = 0
         for citation in citation_list.citations:
@@ -369,23 +369,23 @@ class CitationsStage(Stage):
             except Exception:
                 continue
             
-            # Check if we have specific URLs for this domain
+            # Check if we have grounding URLs for this domain
+            # The domain_to_urls keys are from grounding titles (e.g., "gartner.com")
             if citation_domain in domain_to_urls:
                 specific_urls = domain_to_urls[citation_domain]
                 
-                # Check if current URL is generic (short path)
-                is_generic = len(urlparse(citation.url).path.strip('/').split('/')) <= 2
-                
-                if is_generic and specific_urls:
+                # Always prefer grounding proxy URLs - they are validated by Google
+                # and will redirect to the actual source
+                if specific_urls:
                     # Find best match by title similarity
                     best_match = self._find_best_title_match(citation.title, specific_urls)
                     if best_match and best_match['url'] != citation.url:
                         old_url = citation.url
                         citation.url = best_match['url']
                         enhanced_count += 1
-                        logger.info(f"   📎 Citation [{citation.number}] enhanced:")
+                        logger.info(f"   📎 Citation [{citation.number}] enhanced with grounding proxy:")
                         logger.info(f"      OLD: {old_url}")
-                        logger.info(f"      NEW: {citation.url}")
+                        logger.info(f"      NEW (redirects to real source): {citation.url[:80]}...")
         
         if enhanced_count > 0:
             logger.info(f"✅ Enhanced {enhanced_count} citations with specific URLs")
@@ -516,6 +516,40 @@ class CitationsStage(Stage):
             citation.number = i
 
         logger.debug(f"Successfully extracted {len(citation_list.citations)} citations")
+        
+        # Resolve any proxy URLs (vertexaisearch.cloud.google.com redirects)
+        citation_list = self._resolve_proxy_urls(citation_list)
+        
+        return citation_list
+    
+    def _resolve_proxy_urls(self, citation_list: CitationList) -> CitationList:
+        """
+        Resolve Gemini grounding proxy URLs to real destination URLs.
+        
+        Gemini sometimes includes proxy URLs directly in the Sources field:
+        https://vertexaisearch.cloud.google.com/grounding-api-redirect/...
+        
+        These redirect (302) to the actual source. We follow the redirect
+        to get clean, real URLs for citations.
+        """
+        import requests
+        
+        resolved_count = 0
+        for citation in citation_list.citations:
+            if 'vertexaisearch.cloud.google.com' in citation.url:
+                try:
+                    resp = requests.head(citation.url, allow_redirects=False, timeout=5)
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        real_url = resp.headers.get('Location', citation.url)
+                        logger.info(f"   📎 Resolved proxy URL [{citation.number}]: {real_url}")
+                        citation.url = real_url
+                        resolved_count += 1
+                except Exception as e:
+                    logger.warning(f"   Failed to resolve proxy URL [{citation.number}]: {e}")
+        
+        if resolved_count > 0:
+            logger.info(f"✅ Resolved {resolved_count} proxy URLs to real URLs")
+        
         return citation_list
 
     async def _validate_citations_ultimate(

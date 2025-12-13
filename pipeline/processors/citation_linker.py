@@ -444,3 +444,66 @@ def link_natural_citations(content: str, citation_map: Dict[str, str],
     """
     linker = CitationLinker(citation_map, max_links_per_source)
     return linker.link_citations(content)
+
+
+def link_internal_articles(content: str, internal_links: List[Dict[str, str]], 
+                          max_links: int = 3) -> str:
+    """
+    Link keywords in content to related internal blog posts.
+    
+    Finds topic keywords from internal link titles and links them
+    to the corresponding blog posts, similar to how external citations work.
+    
+    Args:
+        content: HTML content to process
+        internal_links: List of {'url': str, 'title': str} dicts
+        max_links: Maximum internal links to add to body
+        
+    Returns:
+        Content with internal links added
+    """
+    if not content or not internal_links:
+        return content
+    
+    linked_count = 0
+    link_counts: Dict[str, int] = {}
+    
+    for link_data in internal_links:
+        if linked_count >= max_links:
+            break
+            
+        url = link_data.get('url', '')
+        title = link_data.get('title', '')
+        
+        if not url or not title:
+            continue
+        
+        # Skip if already linked this URL
+        if link_counts.get(url, 0) >= 1:
+            continue
+        
+        # Extract key phrases from title (2-3 word phrases)
+        # e.g., "Automated Lead Generation for Tech Startups" -> ["lead generation", "tech startups"]
+        title_clean = re.sub(r'^(Automated|Building|Setting Up|Implementing|Using|Developing)\s+', '', title, flags=re.IGNORECASE)
+        title_clean = re.sub(r'\s+(For|With|In|To|From)\s+.+$', '', title_clean, flags=re.IGNORECASE)
+        
+        # Try to find this phrase in the content (case insensitive)
+        if len(title_clean) < 5:
+            continue
+            
+        # Look for the phrase NOT already inside an <a> tag
+        pattern = rf'(?<![">])({re.escape(title_clean)})(?![^<]*</a>)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        
+        if match:
+            matched_text = match.group(1)
+            replacement = f'<a href="{url}" class="internal-link">{matched_text}</a>'
+            content = content[:match.start(1)] + replacement + content[match.end(1):]
+            link_counts[url] = link_counts.get(url, 0) + 1
+            linked_count += 1
+            logger.debug(f"Added internal link: {matched_text} -> {url}")
+    
+    if linked_count > 0:
+        logger.info(f"✅ Added {linked_count} internal links to body")
+    
+    return content

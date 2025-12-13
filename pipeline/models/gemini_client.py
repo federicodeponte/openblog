@@ -360,16 +360,26 @@ class GeminiClient:
                             logger.info("🔍 Google Search grounding used")
                         if hasattr(gm, 'grounding_chunks') and gm.grounding_chunks:
                             logger.info(f"📎 {len(gm.grounding_chunks)} grounding sources")
-                            # CRITICAL: Extract actual URLs from grounding chunks
+                            # CRITICAL: Extract URLs from grounding chunks
+                            # The 'uri' is a proxy URL (vertexaisearch.cloud.google.com)
+                            # The 'title' contains the real domain (e.g., "sportingnews.com")
+                            # We resolve the proxy to get the real URL
                             for chunk in gm.grounding_chunks:
                                 if hasattr(chunk, 'web') and chunk.web:
-                                    url = getattr(chunk.web, 'uri', None)
+                                    proxy_url = getattr(chunk.web, 'uri', None)
                                     title = getattr(chunk.web, 'title', None)
-                                    if url:
-                                        grounding_urls.append({'url': url, 'title': title or url})
-                                        logger.debug(f"   📎 {title}: {url}")
+                                    if proxy_url:
+                                        # Resolve proxy URL to real URL
+                                        real_url = self._resolve_proxy_url(proxy_url)
+                                        grounding_urls.append({
+                                            'url': real_url,
+                                            'proxy_url': proxy_url,
+                                            'title': title or real_url,
+                                            'domain': title  # Title is the domain
+                                        })
+                                        logger.debug(f"   📎 {title}: {real_url}")
                             if grounding_urls:
-                                logger.info(f"✅ Extracted {len(grounding_urls)} specific source URLs from grounding")
+                                logger.info(f"✅ Extracted {len(grounding_urls)} grounding URLs (resolved from proxy)")
                 
                 # Store grounding URLs for later use (will be injected into Sources field)
                 self._last_grounding_urls = grounding_urls
@@ -763,6 +773,40 @@ Use these sources to inform your content. Cite specific sources where appropriat
             properties=props,
             required=required if required else None,
         )
+
+    def _resolve_proxy_url(self, proxy_url: str) -> str:
+        """
+        Resolve a Gemini grounding proxy URL to the real destination URL.
+        
+        Gemini's grounding returns URLs like:
+        https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQ...
+        
+        These redirect (302) to the actual source URL. We follow the redirect
+        to get the real URL for cleaner citations.
+        
+        Args:
+            proxy_url: The vertexaisearch proxy URL
+            
+        Returns:
+            The real destination URL, or the proxy URL if resolution fails
+        """
+        if not proxy_url or 'vertexaisearch.cloud.google.com' not in proxy_url:
+            return proxy_url
+        
+        try:
+            import requests
+            # Use HEAD request with allow_redirects=False to get redirect location
+            response = requests.head(proxy_url, allow_redirects=False, timeout=5)
+            if response.status_code in (301, 302, 303, 307, 308):
+                real_url = response.headers.get('Location', proxy_url)
+                logger.debug(f"   Resolved proxy → {real_url}")
+                return real_url
+            else:
+                # Not a redirect, return as-is
+                return proxy_url
+        except Exception as e:
+            logger.debug(f"   Failed to resolve proxy URL: {e}")
+            return proxy_url
 
     def __repr__(self) -> str:
         """String representation."""

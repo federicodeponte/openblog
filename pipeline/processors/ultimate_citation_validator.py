@@ -30,9 +30,9 @@ _URL_STATUS_CACHE: Dict[str, Tuple[bool, str, float]] = {}
 _CACHE_TTL = 300  # 5 minutes
 
 # Forbidden hosts and domains
+# NOTE: vertexaisearch.cloud.google.com is ALLOWED - it's Google's grounding redirect
+# These URLs redirect (302) to real sources and are the correct way to cite grounding results
 FORBIDDEN_HOSTS: Set[str] = {
-    "vertexaisearch.cloud.google.com",
-    "cloud.google.com",
     "example.com",
     "example.org",
     "placeholder.com"

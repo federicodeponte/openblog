@@ -17,7 +17,7 @@ from datetime import datetime
 from ..utils.schema_markup import generate_all_schemas, render_schemas_as_json_ld
 from ..models.output_schema import ArticleOutput
 from .markdown_processor import convert_markdown_to_html
-from .citation_linker import link_natural_citations
+from .citation_linker import link_natural_citations, link_internal_articles
 from .content_cleanup_pipeline import cleanup_content as pipeline_cleanup
 
 logger = logging.getLogger(__name__)
@@ -591,6 +591,28 @@ class HTMLRenderer:
                 if citation_map:
                     logger.debug(f"Using citation_map with {len(citation_map)} entries for section {i}")
                 content_with_links = HTMLRenderer._linkify_citations(content_linked, citation_map, url_link_count)
+                
+                # STEP 5: Add internal links to related blog posts
+                internal_links_data = article.get("internal_links_list") or article.get("_internal_links_list")
+                if internal_links_data and i <= 5:  # Only add to first 5 sections
+                    # Convert InternalLinkList object to list of dicts if needed
+                    if hasattr(internal_links_data, 'links'):
+                        # It's an InternalLinkList object
+                        internal_links_list = [
+                            {'url': link.url, 'title': link.title}
+                            for link in internal_links_data.links[:10]
+                        ]
+                    elif isinstance(internal_links_data, list):
+                        internal_links_list = internal_links_data
+                    else:
+                        internal_links_list = []
+                    
+                    if internal_links_list:
+                        content_with_links = link_internal_articles(
+                            content_with_links,
+                            internal_links_list,
+                            max_links=1  # Max 1 per section to avoid over-linking
+                        )
                 
                 parts.append(content_with_links)
             
@@ -1786,6 +1808,36 @@ class HTMLRenderer:
             content = re.sub(pattern, '', content, flags=re.IGNORECASE)
         
         logger.info("🧹 Removed incomplete list items and sentence fragments")
+        
+        # Pattern 6: Items starting with "and " or "or " (continuation, not a list)
+        # E.g., "and your board - that your data..." → not a proper list item
+        content = re.sub(r'<ul>\s*<li>\s*and\s+[^<]*</li>\s*</ul>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'<ul>\s*<li>\s*or\s+[^<]*</li>\s*</ul>', '', content, flags=re.IGNORECASE)
+        
+        # Pattern 7: Single-item lists (not really a list, should be paragraph)
+        # Only remove if the single item looks like a sentence fragment
+        def remove_single_item_fragment_lists(html: str) -> str:
+            pattern = r'<ul>\s*<li>([^<]+)</li>\s*</ul>'
+            def check_single(match):
+                item_text = match.group(1).strip()
+                # Keep if it ends with proper punctuation and is substantial
+                if item_text.endswith(('.', '!', '?')) and len(item_text) > 30:
+                    return match.group(0)
+                # Remove if it looks like a fragment
+                if item_text.startswith(('and ', 'or ', 'but ', 'so ', 'yet ')):
+                    logger.warning(f"🗑️ Removing single-item fragment list: {item_text[:50]}...")
+                    return ''
+                if len(item_text) < 50 and not item_text.endswith(('.', '!', '?')):
+                    logger.warning(f"🗑️ Removing single-item fragment list: {item_text[:50]}...")
+                    return ''
+                return match.group(0)
+            return re.sub(pattern, check_single, html, flags=re.DOTALL)
+        
+        content = remove_single_item_fragment_lists(content)
+        
+        # Pattern 8: Fix malformed HTML - </p> inside <li> tags
+        content = re.sub(r'(<li>[^<]*)</p>\s*</li>', r'\1</li>', content)
+        content = re.sub(r'<li>\s*</p>', '', content)
         
         # STEP 0.5: REMOVE EMPTY LABEL PARAGRAPHS (Gemini bug)
         # Matches: <p><strong>GitHub Copilot:</strong></p> (label with NO content after)

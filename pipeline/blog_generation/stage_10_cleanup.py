@@ -399,6 +399,10 @@ class CleanupStage(Stage):
             merged["validated_citation_map"] = parallel_results["validated_citation_map"]
         if "validated_source_name_map" in parallel_results:
             merged["validated_source_name_map"] = parallel_results["validated_source_name_map"]
+        
+        # Add internal links list for in-body linking to related blog posts
+        if "internal_links_list" in parallel_results:
+            merged["internal_links_list"] = parallel_results["internal_links_list"]
 
         logger.info(
             f"Merged {len(parallel_results)} parallel results into article "
