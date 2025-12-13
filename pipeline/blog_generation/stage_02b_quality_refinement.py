@@ -624,6 +624,10 @@ If no issues, return original content unchanged with issues_fixed=0.
         primary_keyword = context.job_config.get("primary_keyword", "") if context.job_config else ""
         has_keyword_in_da = primary_keyword.lower() in direct_answer_text.lower() if primary_keyword and direct_answer_text else False
         
+        # Only optimize if missing critical elements (citation/keyword) OR if length is truly unreasonable
+        # Don't optimize just for length if it's reasonable (20-150 words)
+        needs_da_length_fix = direct_answer_words < 20 or direct_answer_words > 150
+        
         logger.info(f"📊 AEO Status: Citations={citation_count} (target: 12+), Phrases={phrase_count} (target: 8+), Questions={question_count} (target: 5+)")
         logger.info(f"   Direct Answer: {direct_answer_words} words (target: 40-60), Citation={'✅' if has_citation_in_da else '❌'}, Keyword={'✅' if has_keyword_in_da else '❌'}")
         
@@ -732,8 +736,9 @@ Be GENEROUS - add 2-3 citations, 2-3 conversational phrases, and 1-2 question pa
             # Note: Could add fallback regex injection here if needed
         
         # Optimize Direct Answer if needed (CRITICAL - worth 25 points!)
-        # Check: length, citation, AND keyword (all must be present)
-        needs_da_optimization = direct_answer and (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da or not has_keyword_in_da)
+        # Check: citation, keyword, OR truly unreasonable length
+        # Don't optimize just for length if it's reasonable (20-150 words is fine)
+        needs_da_optimization = direct_answer and (needs_da_length_fix or not has_citation_in_da or not has_keyword_in_da)
         
         if needs_da_optimization:
             logger.info(f"   🔧 Direct Answer needs optimization: {direct_answer_words} words, Citation={'✅' if has_citation_in_da else '❌'}, Keyword={'✅' if has_keyword_in_da else '❌'}")
@@ -745,20 +750,21 @@ CURRENT Direct Answer ({direct_answer_words} words):
 {direct_answer}
 
 REQUIREMENTS (ALL MUST BE MET):
-1. Word count: 40-80 words (ideal: 40-60, acceptable: 60-80) - currently {direct_answer_words} words {'(TOO LONG - shorten to 40-80 words)' if direct_answer_words > 80 else '(TOO SHORT - expand to 40-60 words)' if direct_answer_words < 40 else '(OK length)'}
+1. Word count: Aim for 40-80 words (flexible - quality over strict length) - currently {direct_answer_words} words {'(too long - make it concise)' if direct_answer_words > 100 else '(too short - expand with details)' if direct_answer_words < 30 else '(good length)'}
 2. Primary keyword: MUST include "{primary_keyword}" naturally in the text
 3. Citation: MUST include ONE natural language citation like "According to [Source]..." or "[Source] reports..."
 
 OUTPUT FORMAT:
 - Return ONLY the optimized Direct Answer text
 - NO explanations, NO markdown, NO HTML tags
-- Just the plain text Direct Answer (target: 40-60 words, max: 80 words)
+- Just the plain text Direct Answer
 - Start directly with the answer content
+- Write naturally - don't force exact word count
 
-Example format (40-60 words):
+Example format:
 "According to Gartner research, {primary_keyword} involves [brief explanation]. This approach helps organizations [benefit]. Key practices include [practice 1], [practice 2], and [practice 3]."
 
-Now optimize the Direct Answer above to meet ALL requirements. Be concise but complete.
+Now optimize the Direct Answer above to meet ALL requirements. Focus on quality, clarity, and completeness.
 """
                 logger.debug(f"   📤 Sending Direct Answer optimization request to Gemini...")
                 response = await gemini_client.generate_content(
@@ -774,38 +780,22 @@ Now optimize the Direct Answer above to meet ALL requirements. Be concise but co
                     optimized_da = optimized_da.replace('```', '').strip()
                     optimized_da_words = len(optimized_da.split())
                     
-                    # AEO scorer accepts: 40-60 words (5 pts), 30-40 or 60-80 words (2.5 pts)
-                    # So we accept 30-80 words, and intelligently truncate if >80
-                    if 30 <= optimized_da_words <= 80:
+                    # Accept reasonable Direct Answer lengths (20-150 words)
+                    # AEO scorer gives points for 30-80 words, but we allow flexibility
+                    # Only reject if truly unreasonable (too short or way too long)
+                    if 20 <= optimized_da_words <= 150:
                         article_dict['Direct_Answer'] = optimized_da
                         optimized_count += 1
-                        score_note = "5.0 pts" if 40 <= optimized_da_words <= 60 else "2.5 pts"
+                        # Calculate expected AEO points for logging
+                        if 40 <= optimized_da_words <= 60:
+                            score_note = "5.0 pts"
+                        elif 30 <= optimized_da_words < 40 or 60 < optimized_da_words <= 80:
+                            score_note = "2.5 pts"
+                        else:
+                            score_note = "flexible"
                         logger.info(f"   ✅ Optimized Direct_Answer ({direct_answer_words} → {optimized_da_words} words, {score_note})")
-                    elif optimized_da_words > 80:
-                        # Intelligently truncate to 60-80 words (still gets 2.5 points)
-                        words = optimized_da.split()
-                        # Try to find a good stopping point (end of sentence near 60-70 words)
-                        truncated = ' '.join(words[:70])
-                        # Find last sentence boundary
-                        last_period = truncated.rfind('.')
-                        last_exclamation = truncated.rfind('!')
-                        last_question = truncated.rfind('?')
-                        last_sentence_end = max(last_period, last_exclamation, last_question)
-                        
-                        if last_sentence_end > len(' '.join(words[:50])):  # At least 50 words
-                            truncated = truncated[:last_sentence_end + 1].strip()
-                        else:
-                            truncated = ' '.join(words[:60])  # Fallback: first 60 words
-                        
-                        truncated_words = len(truncated.split())
-                        if truncated_words >= 40:  # Ensure minimum length
-                            article_dict['Direct_Answer'] = truncated
-                            optimized_count += 1
-                            logger.info(f"   ✅ Truncated Direct_Answer to {truncated_words} words (was {optimized_da_words}, gets 2.5 pts)")
-                        else:
-                            logger.warning(f"   ⚠️ Direct_Answer: Could not truncate effectively ({truncated_words} words, min: 40)")
                     else:
-                        logger.warning(f"   ⚠️ Direct_Answer: Optimized version too short ({optimized_da_words} words, min: 30)")
+                        logger.warning(f"   ⚠️ Direct_Answer: Unreasonable length ({optimized_da_words} words, expected: 20-150) - keeping original")
                 else:
                     logger.warning(f"   ⚠️ Direct_Answer: Gemini returned empty response")
             except Exception as e:
