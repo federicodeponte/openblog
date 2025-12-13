@@ -251,10 +251,15 @@ class AEOScorer:
         
         # Citation distribution per-paragraph (5 points)
         # Check both academic AND natural citations per paragraph
+        # NOTE: Academic citations [N] are stripped in HTML renderer, so we only count natural citations here
         paragraphs = re.findall(r'<p[^>]*>.*?</p>', all_content, re.DOTALL)
         if not paragraphs:
-            # Fallback: split by double newlines
+            # Fallback: split by double newlines or single newlines if content is plain text
             paragraphs = [p for p in all_content.split('\n\n') if p.strip()]
+            if not paragraphs:
+                # Last resort: split by periods followed by space (sentence boundaries)
+                sentences = re.split(r'\.\s+', all_content)
+                paragraphs = [s.strip() for s in sentences if len(s.strip()) > 50]  # Only meaningful sentences
         
         paragraphs_with_citations = 0
         for para in paragraphs:
