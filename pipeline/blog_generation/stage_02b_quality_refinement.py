@@ -209,7 +209,7 @@ class QualityRefinementStage(Stage):
         else:
             logger.info("✅ All quality checks passed")
         
-            return context
+        return context
         
     def _apply_regex_cleanup(self, context: ExecutionContext) -> ExecutionContext:
         """

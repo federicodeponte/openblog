@@ -56,7 +56,19 @@ class EnhancedAssetFinder(AssetFinderAgent):
     
     def __init__(self, gemini_api_key: Optional[str] = None):
         super().__init__(gemini_api_key)
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        # Use browser-like headers to avoid blocking
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+        }
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True)
     
     async def find_engaging_assets(
         self, 
