@@ -745,20 +745,20 @@ CURRENT Direct Answer ({direct_answer_words} words):
 {direct_answer}
 
 REQUIREMENTS (ALL MUST BE MET):
-1. Word count: EXACTLY 40-60 words (currently {direct_answer_words} words - {'TOO LONG, shorten it' if direct_answer_words > 70 else 'TOO SHORT, expand it' if direct_answer_words < 30 else 'OK length'})
+1. Word count: 40-80 words (ideal: 40-60, acceptable: 60-80) - currently {direct_answer_words} words {'(TOO LONG - shorten to 40-80 words)' if direct_answer_words > 80 else '(TOO SHORT - expand to 40-60 words)' if direct_answer_words < 40 else '(OK length)'}
 2. Primary keyword: MUST include "{primary_keyword}" naturally in the text
 3. Citation: MUST include ONE natural language citation like "According to [Source]..." or "[Source] reports..."
 
 OUTPUT FORMAT:
 - Return ONLY the optimized Direct Answer text
 - NO explanations, NO markdown, NO HTML tags
-- Just the plain text Direct Answer (40-60 words)
+- Just the plain text Direct Answer (target: 40-60 words, max: 80 words)
 - Start directly with the answer content
 
-Example format:
+Example format (40-60 words):
 "According to Gartner research, {primary_keyword} involves [brief explanation]. This approach helps organizations [benefit]. Key practices include [practice 1], [practice 2], and [practice 3]."
 
-Now optimize the Direct Answer above to meet ALL requirements.
+Now optimize the Direct Answer above to meet ALL requirements. Be concise but complete.
 """
                 logger.debug(f"   📤 Sending Direct Answer optimization request to Gemini...")
                 response = await gemini_client.generate_content(
@@ -774,22 +774,38 @@ Now optimize the Direct Answer above to meet ALL requirements.
                     optimized_da = optimized_da.replace('```', '').strip()
                     optimized_da_words = len(optimized_da.split())
                     
-                    if 30 <= optimized_da_words <= 80:  # Allow slight overflow
+                    # AEO scorer accepts: 40-60 words (5 pts), 30-40 or 60-80 words (2.5 pts)
+                    # So we accept 30-80 words, and intelligently truncate if >80
+                    if 30 <= optimized_da_words <= 80:
                         article_dict['Direct_Answer'] = optimized_da
                         optimized_count += 1
-                        logger.info(f"   ✅ Optimized Direct_Answer ({direct_answer_words} → {optimized_da_words} words)")
+                        score_note = "5.0 pts" if 40 <= optimized_da_words <= 60 else "2.5 pts"
+                        logger.info(f"   ✅ Optimized Direct_Answer ({direct_answer_words} → {optimized_da_words} words, {score_note})")
+                    elif optimized_da_words > 80:
+                        # Intelligently truncate to 60-80 words (still gets 2.5 points)
+                        words = optimized_da.split()
+                        # Try to find a good stopping point (end of sentence near 60-70 words)
+                        truncated = ' '.join(words[:70])
+                        # Find last sentence boundary
+                        last_period = truncated.rfind('.')
+                        last_exclamation = truncated.rfind('!')
+                        last_question = truncated.rfind('?')
+                        last_sentence_end = max(last_period, last_exclamation, last_question)
+                        
+                        if last_sentence_end > len(' '.join(words[:50])):  # At least 50 words
+                            truncated = truncated[:last_sentence_end + 1].strip()
+                        else:
+                            truncated = ' '.join(words[:60])  # Fallback: first 60 words
+                        
+                        truncated_words = len(truncated.split())
+                        if truncated_words >= 40:  # Ensure minimum length
+                            article_dict['Direct_Answer'] = truncated
+                            optimized_count += 1
+                            logger.info(f"   ✅ Truncated Direct_Answer to {truncated_words} words (was {optimized_da_words}, gets 2.5 pts)")
+                        else:
+                            logger.warning(f"   ⚠️ Direct_Answer: Could not truncate effectively ({truncated_words} words, min: 40)")
                     else:
-                        logger.warning(f"   ⚠️ Direct_Answer: Optimized version has {optimized_da_words} words (target: 40-60) - REJECTED")
-                        # Try to truncate if too long (last resort)
-                        if optimized_da_words > 80:
-                            words = optimized_da.split()
-                            truncated = ' '.join(words[:60])  # Take first 60 words
-                            if len(truncated.split()) >= 30:
-                                article_dict['Direct_Answer'] = truncated
-                                optimized_count += 1
-                                logger.info(f"   ✅ Truncated Direct_Answer to {len(truncated.split())} words (was {optimized_da_words})")
-                            else:
-                                logger.warning(f"   ❌ Could not truncate Direct_Answer effectively")
+                        logger.warning(f"   ⚠️ Direct_Answer: Optimized version too short ({optimized_da_words} words, min: 30)")
                 else:
                     logger.warning(f"   ⚠️ Direct_Answer: Gemini returned empty response")
             except Exception as e:
