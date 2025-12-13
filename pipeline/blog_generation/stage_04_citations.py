@@ -139,7 +139,8 @@ class CitationsStage(Stage):
         if self.config.enable_citation_validation and context.company_data and context.company_data.get("company_url"):
             logger.info("🔍 Starting ultimate citation validation...")
             logger.info(f"    enable_citation_validation = {self.config.enable_citation_validation}")
-            logger.info(f"    company_url = {context.company_data.get('company_url')}")
+            company_url_val = context.company_data.get('company_url') if context.company_data else ""
+            logger.info(f"    company_url = {company_url_val}")
             logger.info(f"    Gemini client will be initialized for citation validation")
             validated_list = await self._validate_citations_ultimate(
                 citation_list, context
@@ -158,8 +159,11 @@ class CitationsStage(Stage):
                     ])
                     
                     # Check if original URL is from company domain
-                    company_domain = context.company_data.get("company_url", "").replace("https://", "").replace("http://", "").split("/")[0]
-                    is_company_url = company_domain and company_domain in original_url.lower()
+                    if context.company_data:
+                        company_domain = context.company_data.get("company_url", "").replace("https://", "").replace("http://", "").split("/")[0]
+                        is_company_url = company_domain and company_domain in original_url.lower()
+                    else:
+                        is_company_url = False
                     
                     # CRITICAL: Only restore if:
                     # 1. It's a generic fallback (bad replacement), OR

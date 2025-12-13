@@ -739,17 +739,26 @@ Be GENEROUS - add 2-3 citations, 2-3 conversational phrases, and 1-2 question pa
             logger.info(f"   🔧 Direct Answer needs optimization: {direct_answer_words} words, Citation={'✅' if has_citation_in_da else '❌'}, Keyword={'✅' if has_keyword_in_da else '❌'}")
             try:
                 primary_keyword = context.job_config.get("primary_keyword", "") if context.job_config else ""
-                da_prompt = f"""{aeo_prompt}
+                da_prompt = f"""You are optimizing a Direct Answer for AEO (Agentic Search Optimization). This is CRITICAL - worth 25 points.
 
-DIRECT ANSWER TO OPTIMIZE:
+CURRENT Direct Answer ({direct_answer_words} words):
 {direct_answer}
 
-CRITICAL: Direct Answer is worth 25 AEO points. It MUST:
-1. Be 40-60 words (currently {direct_answer_words} words - {'TOO LONG' if direct_answer_words > 70 else 'TOO SHORT' if direct_answer_words < 30 else 'OK'})
-2. Include primary keyword: "{primary_keyword}"
-3. Include natural language citation: "According to [Source]..." or "[Source] reports..."
+REQUIREMENTS (ALL MUST BE MET):
+1. Word count: EXACTLY 40-60 words (currently {direct_answer_words} words - {'TOO LONG, shorten it' if direct_answer_words > 70 else 'TOO SHORT, expand it' if direct_answer_words < 30 else 'OK length'})
+2. Primary keyword: MUST include "{primary_keyword}" naturally in the text
+3. Citation: MUST include ONE natural language citation like "According to [Source]..." or "[Source] reports..."
 
-Return optimized Direct Answer meeting ALL requirements above. Be concise - 40-60 words total.
+OUTPUT FORMAT:
+- Return ONLY the optimized Direct Answer text
+- NO explanations, NO markdown, NO HTML tags
+- Just the plain text Direct Answer (40-60 words)
+- Start directly with the answer content
+
+Example format:
+"According to Gartner research, {primary_keyword} involves [brief explanation]. This approach helps organizations [benefit]. Key practices include [practice 1], [practice 2], and [practice 3]."
+
+Now optimize the Direct Answer above to meet ALL requirements.
 """
                 logger.debug(f"   📤 Sending Direct Answer optimization request to Gemini...")
                 response = await gemini_client.generate_content(
@@ -759,13 +768,28 @@ Return optimized Direct Answer meeting ALL requirements above. Be concise - 40-6
                 
                 if response:
                     optimized_da = response.strip()
+                    # Strip any markdown formatting or HTML tags
+                    optimized_da = re.sub(r'<[^>]+>', '', optimized_da)  # Remove HTML
+                    optimized_da = re.sub(r'```[^`]*```', '', optimized_da)  # Remove code blocks
+                    optimized_da = optimized_da.replace('```', '').strip()
                     optimized_da_words = len(optimized_da.split())
+                    
                     if 30 <= optimized_da_words <= 80:  # Allow slight overflow
                         article_dict['Direct_Answer'] = optimized_da
                         optimized_count += 1
                         logger.info(f"   ✅ Optimized Direct_Answer ({direct_answer_words} → {optimized_da_words} words)")
                     else:
                         logger.warning(f"   ⚠️ Direct_Answer: Optimized version has {optimized_da_words} words (target: 40-60) - REJECTED")
+                        # Try to truncate if too long (last resort)
+                        if optimized_da_words > 80:
+                            words = optimized_da.split()
+                            truncated = ' '.join(words[:60])  # Take first 60 words
+                            if len(truncated.split()) >= 30:
+                                article_dict['Direct_Answer'] = truncated
+                                optimized_count += 1
+                                logger.info(f"   ✅ Truncated Direct_Answer to {len(truncated.split())} words (was {optimized_da_words})")
+                            else:
+                                logger.warning(f"   ❌ Could not truncate Direct_Answer effectively")
                 else:
                     logger.warning(f"   ⚠️ Direct_Answer: Gemini returned empty response")
             except Exception as e:
