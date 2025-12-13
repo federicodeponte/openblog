@@ -255,7 +255,10 @@ class CitationsStage(Stage):
                 timeout=self.config.citation_validation_timeout,
             )
         
-        # Get company data (company_url already checked in execute())
+        # Get company data (with null check)
+        if not context.company_data:
+            logger.warning("No company_data available for citation validation")
+            return citation_list
         company_url = context.company_data.get("company_url", "")
         competitors = context.company_data.get("company_competitors", [])
         language = context.language or "en"
@@ -622,6 +625,9 @@ class CitationsStage(Stage):
             citations_for_validation.append(citation_dict)
         
         # Extract company and competitor information
+        if not context.company_data:
+            logger.warning("No company_data available for ultimate citation validation")
+            return citation_list
         company_url = context.company_data.get("company_url", "")
         competitors = getattr(context, 'sitemap_data', {}).get("competitors", [])
         language = context.language or "en"

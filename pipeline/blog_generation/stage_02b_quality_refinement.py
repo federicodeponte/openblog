@@ -620,11 +620,11 @@ If no issues, return original content unchanged with issues_fixed=0.
         logger.info(f"📊 AEO Status: Citations={citation_count} (target: 12+), Phrases={phrase_count} (target: 8+), Questions={question_count} (target: 5+)")
         logger.info(f"   Direct Answer: {direct_answer_words} words (target: 40-60), Citation={'✅' if has_citation_in_da else '❌'}")
         
-        # Only optimize if significantly below targets
+        # Always optimize if below targets (more aggressive)
         needs_optimization = (
-            citation_count < 10 or
-            phrase_count < 6 or
-            question_count < 3 or
+            citation_count < 15 or  # Target: 12-15, optimize if <15
+            phrase_count < 10 or    # Target: 8+, optimize if <10 (buffer)
+            question_count < 6 or   # Target: 5+, optimize if <6 (buffer)
             (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da)
         )
         
@@ -661,11 +661,11 @@ OPTIMIZATION TASKS:
 Return the optimized article content. Be surgical - only add what's missing, don't rewrite everything.
 """
         
-        # Optimize sections that need improvement (more aggressive)
+        # Optimize sections that need improvement (AGGRESSIVE - optimize more sections)
         optimized_count = 0
         sections_to_optimize = []
         
-        # Identify sections that need optimization
+        # Identify sections that need optimization (more aggressive criteria)
         for i in range(1, 10):
             field = f'section_{i:02d}_content'
             content = article_dict.get(field, '')
@@ -676,29 +676,29 @@ Return the optimized article content. Be surgical - only add what's missing, don
             section_phrases = sum(1 for phrase in conversational_phrases if phrase in content.lower())
             section_questions = sum(1 for pattern in question_patterns if pattern in content.lower())
             
-            # Optimize if section is below average or missing key components
+            # More aggressive: optimize if section is missing ANY component or below average
             needs_opt = (
-                section_citations == 0 or  # No citations
-                (section_phrases == 0 and phrase_count < 8) or  # No phrases and overall below target
-                (section_questions == 0 and question_count < 5)  # No questions and overall below target
+                section_citations < 2 or  # Less than 2 citations (was: == 0)
+                (section_phrases < 2 and phrase_count < 10) or  # Less than 2 phrases and overall below target
+                (section_questions == 0 and question_count < 6)  # No questions and overall below target
             )
             
             if needs_opt:
-                sections_to_optimize.append((i, field, content, section_citations, section_phrases))
+                sections_to_optimize.append((i, field, content, section_citations, section_phrases, section_questions))
         
-        # Optimize up to 5 sections (prioritize those with 0 citations)
-        sections_to_optimize.sort(key=lambda x: (x[3] == 0, x[4] == 0), reverse=True)  # Prioritize sections with 0 citations/phrases
-        sections_to_optimize = sections_to_optimize[:5]  # Limit to 5 sections
+        # Optimize up to 7 sections (increased from 5) - prioritize those with 0 citations/phrases
+        sections_to_optimize.sort(key=lambda x: (x[3] == 0, x[4] == 0, x[5] == 0), reverse=True)  # Prioritize sections missing components
+        sections_to_optimize = sections_to_optimize[:7]  # Increased from 5 to 7 sections
         
-        for i, field, content, section_citations, section_phrases in sections_to_optimize:
+        for i, field, content, section_citations, section_phrases, section_questions in sections_to_optimize:
             try:
                 section_prompt = f"""{aeo_prompt}
 
 SECTION TO OPTIMIZE:
 {content}
 
-Return ONLY the optimized section content with added citations and conversational phrases.
-Be surgical - add 1-2 citations and 1-2 conversational phrases naturally.
+Return ONLY the optimized section content with added citations, conversational phrases, and question patterns.
+Be GENEROUS - add 2-3 citations, 2-3 conversational phrases, and 1-2 question patterns naturally.
 """
                 response = await gemini_client.generate_content(
                     prompt=section_prompt,

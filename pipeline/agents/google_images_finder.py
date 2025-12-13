@@ -49,8 +49,10 @@ class GoogleImagesFinder:
     """
     
     # DataForSEO Google Images endpoints
+    # Note: Using same pattern as regular Google Search, but for Images
     TASK_POST_URL = "https://api.dataforseo.com/v3/serp/google/images/task_post"
-    TASK_GET_URL = "https://api.dataforseo.com/v3/serp/google/images/task_get/{task_id}"
+    # Try different endpoint formats - might need task_get/advanced or different path
+    TASK_GET_URL = "https://api.dataforseo.com/v3/serp/google/images/task_get/advanced/{task_id}"
     
     # Polling configuration (same as DataForSeoProvider)
     MAX_POLL_ATTEMPTS = 10
@@ -187,19 +189,26 @@ class GoogleImagesFinder:
             )
             
             if response.status_code != 200:
-                logger.error(f"Task POST failed: HTTP {response.status_code}")
+                logger.error(f"Task POST failed: HTTP {response.status_code}, Response: {response.text[:200]}")
                 return None
             
             data = response.json()
+            logger.debug(f"Task POST response: {data}")
+            
             if not data.get("tasks") or not data["tasks"]:
+                logger.error(f"No tasks in response: {data}")
                 return None
             
             task = data["tasks"][0]
-            if task.get("status_code") != 20100:
-                logger.error(f"Task creation failed: {task.get('status_message')}")
+            status_code = task.get("status_code")
+            if status_code != 20100:
+                logger.error(f"Task creation failed: status_code={status_code}, message={task.get('status_message')}")
+                logger.debug(f"Full task response: {task}")
                 return None
             
-            return task.get("id")
+            task_id = task.get("id")
+            logger.info(f"✅ Google Images task created: {task_id}")
+            return task_id
             
         except Exception as e:
             logger.error(f"Task POST error: {e}")
@@ -221,11 +230,13 @@ class GoogleImagesFinder:
                 response = await client.get(url, headers=self._get_auth_headers())
                 
                 if response.status_code != 200:
+                    logger.debug(f"Poll attempt {attempt + 1}: HTTP {response.status_code}")
                     delay = min(delay * self.BACKOFF_MULTIPLIER, self.MAX_POLL_DELAY)
                     continue
                 
                 data = response.json()
                 if not data.get("tasks") or not data["tasks"]:
+                    logger.debug(f"Poll attempt {attempt + 1}: No tasks in response")
                     delay = min(delay * self.BACKOFF_MULTIPLIER, self.MAX_POLL_DELAY)
                     continue
                 
@@ -234,15 +245,21 @@ class GoogleImagesFinder:
                 
                 # Still processing
                 if status_code == 20100:
+                    logger.debug(f"Poll attempt {attempt + 1}: Task still processing (20100)")
                     delay = min(delay * self.BACKOFF_MULTIPLIER, self.MAX_POLL_DELAY)
                     continue
                 
                 # Completed
                 if status_code == 20000:
-                    return self._parse_image_results(task.get("result", []))
+                    result = task.get("result", [])
+                    logger.info(f"✅ Task completed! Parsing {len(result) if isinstance(result, list) else 'N/A'} results")
+                    parsed = self._parse_image_results(result)
+                    return parsed
                 
-                # Failed
-                logger.error(f"Task failed: {task.get('status_message')}")
+                # Failed or other status
+                error_msg = task.get("status_message", f"Unknown status code: {status_code}")
+                logger.error(f"Task failed: {error_msg} (status_code: {status_code})")
+                logger.debug(f"Full task response: {task}")
                 return []
                 
             except Exception as e:
