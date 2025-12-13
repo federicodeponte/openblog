@@ -136,7 +136,7 @@ class CitationsStage(Stage):
         logger.debug(f"Preserved {len(original_urls)} original URLs before validation")
 
         # ULTIMATE VALIDATION: Use enhanced citation validator
-        if self.config.enable_citation_validation and context.company_data.get("company_url"):
+        if self.config.enable_citation_validation and context.company_data and context.company_data.get("company_url"):
             logger.info("🔍 Starting ultimate citation validation...")
             logger.info(f"    enable_citation_validation = {self.config.enable_citation_validation}")
             logger.info(f"    company_url = {context.company_data.get('company_url')}")
@@ -361,11 +361,17 @@ class CitationsStage(Stage):
         logger.info(f"   Grounding URL domains (from titles): {', '.join(domain_to_urls.keys())}")
         
         enhanced_count = 0
+        domain_only_count = 0
+        
         for citation in citation_list.citations:
             # Extract domain from citation URL
             try:
                 from urllib.parse import urlparse
-                citation_domain = urlparse(citation.url).netloc.lower().replace('www.', '')
+                parsed = urlparse(citation.url)
+                citation_domain = parsed.netloc.lower().replace('www.', '')
+                # Check if URL is domain-only (path has <= 3 parts: /, maybe /path, maybe /path/item)
+                path_parts = [p for p in parsed.path.split('/') if p]
+                is_domain_only = len(path_parts) <= 1  # Domain-only if just "/" or "/single-item"
             except Exception:
                 continue
             
@@ -374,23 +380,40 @@ class CitationsStage(Stage):
             if citation_domain in domain_to_urls:
                 specific_urls = domain_to_urls[citation_domain]
                 
-                # Always prefer grounding proxy URLs - they are validated by Google
-                # and will redirect to the actual source
                 if specific_urls:
                     # Find best match by title similarity
                     best_match = self._find_best_title_match(citation.title, specific_urls)
-                    if best_match and best_match['url'] != citation.url:
+                    
+                    # CRITICAL: Always enhance domain-only URLs, only enhance full URLs if significantly better
+                    should_enhance = False
+                    if is_domain_only:
+                        # Domain-only URLs should ALWAYS be enhanced
+                        should_enhance = True
+                        domain_only_count += 1
+                        logger.info(f"   🎯 Citation [{citation.number}] is domain-only - WILL ENHANCE")
+                    elif best_match and best_match['url'] != citation.url:
+                        # Full URLs: only enhance if grounding URL is significantly better (longer path = more specific)
+                        grounding_path_parts = [p for p in urlparse(best_match['url']).path.split('/') if p]
+                        if len(grounding_path_parts) > len(path_parts) + 1:  # Significantly more specific
+                            should_enhance = True
+                            logger.info(f"   📎 Citation [{citation.number}] full URL - enhancing to more specific URL")
+                        else:
+                            logger.debug(f"   ⏭️  Citation [{citation.number}] already has good full URL - skipping")
+                    
+                    if should_enhance and best_match:
                         old_url = citation.url
                         citation.url = best_match['url']
                         enhanced_count += 1
-                        logger.info(f"   📎 Citation [{citation.number}] enhanced with grounding proxy:")
+                        logger.info(f"   ✅ Citation [{citation.number}] enhanced:")
                         logger.info(f"      OLD: {old_url}")
-                        logger.info(f"      NEW (redirects to real source): {citation.url[:80]}...")
+                        logger.info(f"      NEW: {citation.url[:80]}...")
         
         if enhanced_count > 0:
             logger.info(f"✅ Enhanced {enhanced_count} citations with specific URLs")
+            if domain_only_count > 0:
+                logger.info(f"   📊 {domain_only_count} domain-only URLs converted to full URLs")
         else:
-            logger.info("   No generic URLs needed enhancement")
+            logger.info("   No URLs needed enhancement")
         
         return citation_list
     

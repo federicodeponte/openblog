@@ -661,39 +661,56 @@ OPTIMIZATION TASKS:
 Return the optimized article content. Be surgical - only add what's missing, don't rewrite everything.
 """
         
-        # Optimize each section that needs it
+        # Optimize sections that need improvement (more aggressive)
         optimized_count = 0
+        sections_to_optimize = []
+        
+        # Identify sections that need optimization
         for i in range(1, 10):
             field = f'section_{i:02d}_content'
             content = article_dict.get(field, '')
             if not content or len(content) < 200:
                 continue
             
-            # Check if this section needs optimization
             section_citations = sum(len(re.findall(pattern, content, re.IGNORECASE)) for pattern in natural_citation_patterns)
             section_phrases = sum(1 for phrase in conversational_phrases if phrase in content.lower())
+            section_questions = sum(1 for pattern in question_patterns if pattern in content.lower())
             
-            if section_citations == 0 and section_phrases < 2:
-                # This section needs optimization
-                try:
-                    section_prompt = f"""{aeo_prompt}
+            # Optimize if section is below average or missing key components
+            needs_opt = (
+                section_citations == 0 or  # No citations
+                (section_phrases == 0 and phrase_count < 8) or  # No phrases and overall below target
+                (section_questions == 0 and question_count < 5)  # No questions and overall below target
+            )
+            
+            if needs_opt:
+                sections_to_optimize.append((i, field, content, section_citations, section_phrases))
+        
+        # Optimize up to 5 sections (prioritize those with 0 citations)
+        sections_to_optimize.sort(key=lambda x: (x[3] == 0, x[4] == 0), reverse=True)  # Prioritize sections with 0 citations/phrases
+        sections_to_optimize = sections_to_optimize[:5]  # Limit to 5 sections
+        
+        for i, field, content, section_citations, section_phrases in sections_to_optimize:
+            try:
+                section_prompt = f"""{aeo_prompt}
 
 SECTION TO OPTIMIZE:
 {content}
 
 Return ONLY the optimized section content with added citations and conversational phrases.
+Be surgical - add 1-2 citations and 1-2 conversational phrases naturally.
 """
-                    response = await gemini_client.generate_content(
-                        prompt=section_prompt,
-                        response_schema=None  # Free-form response
-                    )
-                    
-                    if response and len(response) > 100:
-                        article_dict[field] = response.strip()
-                        optimized_count += 1
-                        logger.info(f"   ✅ Optimized {field}")
-                except Exception as e:
-                    logger.debug(f"   ⚠️ {field}: AEO optimization failed - {e}")
+                response = await gemini_client.generate_content(
+                    prompt=section_prompt,
+                    response_schema=None  # Free-form response
+                )
+                
+                if response and len(response) > 100:
+                    article_dict[field] = response.strip()
+                    optimized_count += 1
+                    logger.info(f"   ✅ Optimized {field} (had {section_citations} citations, {section_phrases} phrases)")
+            except Exception as e:
+                logger.debug(f"   ⚠️ {field}: AEO optimization failed - {e}")
         
         # Optimize Direct Answer if needed
         if direct_answer and (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da):

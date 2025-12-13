@@ -222,10 +222,14 @@ async def test_single_article():
             html = context.final_html
         elif hasattr(context, 'validated_article'):
             # Try to extract HTML from validated_article
-            if hasattr(context.validated_article, 'model_dump'):
+            if isinstance(context.validated_article, dict):
+                article_dict = context.validated_article
+            elif hasattr(context.validated_article, 'model_dump'):
                 article_dict = context.validated_article.model_dump()
-            else:
+            elif hasattr(context.validated_article, '__dict__'):
                 article_dict = dict(context.validated_article.__dict__)
+            else:
+                article_dict = {}
             # Would need to render HTML from article_dict
         
         # Inspect stages

@@ -452,6 +452,20 @@ class HTMLRenderer:
         html = html.replace('—', ' - ')  # Em dash
         html = html.replace('–', '-')    # En dash
         
+        # FINAL CLEANUP: Remove academic citations [N] from body content (but preserve in Sources section)
+        # Split HTML into body and Sources section
+        sources_start = html.find('<section class="citations">')
+        if sources_start > 0:
+            body_html = html[:sources_start]
+            sources_html = html[sources_start:]
+            
+            # Remove [N] patterns from body only (not Sources section)
+            # Pattern matches [N] but not [N]: (which is correct in Sources)
+            body_html = re.sub(r'(?<!\[)\[\d+\](?!:)', '', body_html)
+            
+            html = body_html + sources_html
+            logger.info("🚫 Final cleanup: Removed academic citations from body content (preserved Sources section)")
+        
         return html
 
     @staticmethod
