@@ -596,11 +596,13 @@ If no issues, return original content unchanged with issues_fixed=0.
         for i in range(1, 10):
             all_content += ' ' + article_dict.get(f'section_{i:02d}_content', '')
         
-        # Count citations (natural language)
+        # Count citations (natural language) - ALIGNED WITH AEO SCORER PATTERNS
         import re
         natural_citation_patterns = [
-            r'according to [A-Z]', r'[A-Z][a-z]+ reports?', r'[A-Z][a-z]+ states?',
-            r'[A-Z][a-z]+ notes?', r'[A-Z][a-z]+ predicts?', r'research by [A-Z]',
+            r'according to [A-Z]',
+            r'[A-Z][a-z]+ (reports?|states?|notes?|found)',  # Match AEO scorer pattern
+            r'[A-Z][a-z]+ predicts?',
+            r'research (by|from) [A-Z]',  # Match AEO scorer pattern
         ]
         citation_count = sum(len(re.findall(pattern, all_content, re.IGNORECASE)) for pattern in natural_citation_patterns)
         
@@ -612,20 +614,25 @@ If no issues, return original content unchanged with issues_fixed=0.
         question_patterns = ['what is', 'how does', 'why does', 'when should', 'where can', 'how can', 'what are']
         question_count = sum(1 for pattern in question_patterns if pattern in all_content.lower())
         
-        # Check Direct Answer
+        # Check Direct Answer - STRIP HTML FOR ACCURATE DETECTION
         direct_answer = article_dict.get('Direct_Answer', '')
-        direct_answer_words = len(direct_answer.split()) if direct_answer else 0
-        has_citation_in_da = any(re.search(pattern, direct_answer, re.IGNORECASE) for pattern in natural_citation_patterns) if direct_answer else False
+        direct_answer_text = re.sub(r'<[^>]+>', '', direct_answer) if direct_answer else ""  # Strip HTML
+        direct_answer_words = len(direct_answer_text.split()) if direct_answer_text else 0
+        has_citation_in_da = any(re.search(pattern, direct_answer_text, re.IGNORECASE) for pattern in natural_citation_patterns) if direct_answer_text else False
+        
+        # Check if primary keyword is in Direct Answer
+        primary_keyword = context.job_config.get("primary_keyword", "") if context.job_config else ""
+        has_keyword_in_da = primary_keyword.lower() in direct_answer_text.lower() if primary_keyword and direct_answer_text else False
         
         logger.info(f"📊 AEO Status: Citations={citation_count} (target: 12+), Phrases={phrase_count} (target: 8+), Questions={question_count} (target: 5+)")
-        logger.info(f"   Direct Answer: {direct_answer_words} words (target: 40-60), Citation={'✅' if has_citation_in_da else '❌'}")
+        logger.info(f"   Direct Answer: {direct_answer_words} words (target: 40-60), Citation={'✅' if has_citation_in_da else '❌'}, Keyword={'✅' if has_keyword_in_da else '❌'}")
         
-        # Always optimize if below targets (more aggressive)
+        # Always optimize if below targets (more aggressive) - INCLUDES KEYWORD CHECK
         needs_optimization = (
             citation_count < 15 or  # Target: 12-15, optimize if <15
             phrase_count < 10 or    # Target: 8+, optimize if <10 (buffer)
             question_count < 6 or   # Target: 5+, optimize if <6 (buffer)
-            (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da)
+            (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da or not has_keyword_in_da)  # ADD: keyword check
         )
         
         if not needs_optimization:
@@ -650,9 +657,11 @@ OPTIMIZATION TASKS:
 2. Add conversational phrases naturally (target: 8+ total)
    - Use: "you can", "you'll", "here's", "let's", "this is", "when you", "if you"
    - Add 2-4 more phrases if below 8 total
-3. Add question patterns naturally (target: 5+ total)
-   - Use: "what is", "how does", "why does", "when should", "where can"
-   - Add 2-3 more question patterns if below 5 total
+3. Add question patterns naturally (target: 5+ total) - CRITICAL FOR AEO SCORE
+   - Use these EXACT patterns: "What is", "How does", "Why does", "When should", "Where can", "How can", "What are"
+   - Add AT LEAST 5 question patterns total across all sections
+   - Examples: "What is API security testing?", "How does automation help?", "Why should you implement this?"
+   - Add 3-5 more question patterns if currently below 5 total
 4. Enhance Direct Answer if needed:
    - Ensure 40-60 words
    - Include primary keyword
@@ -712,8 +721,19 @@ Be GENEROUS - add 2-3 citations, 2-3 conversational phrases, and 1-2 question pa
             except Exception as e:
                 logger.debug(f"   ⚠️ {field}: AEO optimization failed - {e}")
         
+        # Verify question patterns were added (post-optimization check)
+        all_content_after = article_dict.get('Intro', '') + ' ' + article_dict.get('Direct_Answer', '')
+        for i in range(1, 10):
+            all_content_after += ' ' + article_dict.get(f'section_{i:02d}_content', '')
+        question_count_after = sum(1 for pattern in question_patterns if pattern in all_content_after.lower())
+        
+        if question_count_after < 5:
+            logger.warning(f"⚠️ Only {question_count_after} question patterns found after optimization (target: 5+)")
+            # Note: Could add fallback regex injection here if needed
+        
         # Optimize Direct Answer if needed (CRITICAL - worth 25 points!)
-        if direct_answer and (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da):
+        # Check: length, citation, AND keyword (all must be present)
+        if direct_answer and (direct_answer_words < 30 or direct_answer_words > 70 or not has_citation_in_da or not has_keyword_in_da):
             try:
                 primary_keyword = context.job_config.get("primary_keyword", "") if context.job_config else ""
                 da_prompt = f"""{aeo_prompt}
