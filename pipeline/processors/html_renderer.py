@@ -1591,6 +1591,35 @@ class HTMLRenderer:
         
         content = remove_redundant_lists(content)
         
+        # STEP 0.4b1.5: NUCLEAR OPTION - Remove lists where ALL items are truncated fragments
+        # Pattern: <ul> where every <li> ends without punctuation (obvious fragments)
+        def remove_all_fragment_lists(html: str) -> str:
+            """Remove entire lists where all items are clearly truncated fragments."""
+            pattern = r'<ul>((?:<li>[^<]+</li>\s*){2,})</ul>'
+            
+            def check_all_fragments(match):
+                list_content = match.group(1)
+                items = re.findall(r'<li>([^<]+)</li>', list_content)
+                
+                if not items:
+                    return match.group(0)
+                
+                # Check if ALL items are fragments (end without punctuation)
+                fragment_count = sum(1 for item in items if not item.strip().endswith(('.', '!', '?', ':')))
+                
+                # If ALL items are fragments, remove the entire list
+                # (Don't check avg length - long fragments are still fragments)
+                if fragment_count == len(items):
+                    avg_len = sum(len(item) for item in items) / len(items)
+                    logger.warning(f"🗑️ NUCLEAR: Removing list with {len(items)} fragment items (all truncated, avg {avg_len:.0f} chars)")
+                    return ''  # Remove entire list
+                
+                return match.group(0)
+            
+            return re.sub(pattern, check_all_fragments, html)
+        
+        content = remove_all_fragment_lists(content)
+        
         # STEP 0.4b2: ADDITIONAL AGGRESSIVE DUPLICATE LIST REMOVAL
         # Pattern: Paragraph about "X is Y" followed by list starting with "X is Y"
         # This catches cases where the first list item starts identically to the paragraph
