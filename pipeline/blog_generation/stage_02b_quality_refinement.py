@@ -523,7 +523,7 @@ If no issues, return original content unchanged with issues_fixed=0.
         if total_fixes > 0:
             logger.info(f"   📝 Gemini fixed {total_fixes} total issues across all fields")
             context.structured_data = ArticleOutput(**article_dict)
-            else:
+        else:
             logger.info("   ℹ️ Gemini review: no additional issues found")
         
         return context
