@@ -173,7 +173,7 @@ def article_to_markdown(article: dict) -> str:
     return "\n".join(lines).strip()
 
 
-def generate(url: str, keywords: str, _previous_output: str = None, _feedback: str = None) -> dict:
+def generate(url: str, keywords: str, _previous_output: str = None, _feedback: str = None, _knowledge: dict = None) -> dict:
     """
     Run OpenBlog's full 5-stage pipeline.
 
@@ -196,6 +196,16 @@ def generate(url: str, keywords: str, _previous_output: str = None, _feedback: s
     keyword_list = _parse_keywords(keywords)
     if not keyword_list:
         raise ValueError("keywords is required (one keyword per line)")
+
+    # Prepend knowledge context to keywords if available
+    if _knowledge:
+        context_lines = []
+        for doc_name, doc_text in _knowledge.items():
+            context_lines.append(f"[Context from {doc_name}]: {doc_text[:500]}")
+        if context_lines:
+            context_prefix = "[COMPANY KNOWLEDGE]\n" + "\n".join(context_lines) + "\n\n"
+            keyword_list = [context_prefix + kw for kw in keyword_list]
+            logger.info("generate() injected %d knowledge docs into keywords", len(_knowledge))
 
     # Feedback refinement: augment keywords with context from the previous run
     if _previous_output and _feedback:
@@ -271,7 +281,7 @@ def generate(url: str, keywords: str, _previous_output: str = None, _feedback: s
     }
 
 
-def refresh(article_data) -> dict:
+def refresh(article_data, _knowledge: dict = None) -> dict:
     """
     Re-run stages 3 (quality check), 4 (URL verify), and 5 (internal links)
     on an existing article.

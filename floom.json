@@ -7,13 +7,35 @@
       "description": "Generate new blog articles from keywords and a company URL",
       "feedback": true,
       "inputs": [
-        {"name": "url", "type": "url", "label": "Company Website URL", "required": true},
-        {"name": "keywords", "type": "textarea", "label": "Keywords (one per line)", "required": true}
+        {
+          "name": "url",
+          "type": "url",
+          "label": "Company Website URL",
+          "required": true
+        },
+        {
+          "name": "keywords",
+          "type": "textarea",
+          "label": "Keywords (one per line)",
+          "required": true
+        }
       ],
       "outputs": [
-        {"name": "preview", "label": "Article Preview", "type": "html"},
-        {"name": "markdown", "label": "Markdown Source", "type": "markdown"},
-        {"name": "raw", "label": "Raw Response", "type": "json"}
+        {
+          "name": "preview",
+          "label": "Article Preview",
+          "type": "html"
+        },
+        {
+          "name": "markdown",
+          "label": "Markdown Source",
+          "type": "markdown"
+        },
+        {
+          "name": "raw",
+          "label": "Raw Response",
+          "type": "json"
+        }
       ]
     },
     "refresh": {
@@ -30,9 +52,21 @@
         }
       ],
       "outputs": [
-        {"name": "preview", "label": "Article Preview", "type": "html"},
-        {"name": "markdown", "label": "Markdown Source", "type": "markdown"},
-        {"name": "raw", "label": "Raw Response", "type": "json"}
+        {
+          "name": "preview",
+          "label": "Article Preview",
+          "type": "html"
+        },
+        {
+          "name": "markdown",
+          "label": "Markdown Source",
+          "type": "markdown"
+        },
+        {
+          "name": "raw",
+          "label": "Raw Response",
+          "type": "json"
+        }
       ]
     }
   },
@@ -45,6 +79,9 @@
     "markdownify",
     "openpyxl"
   ],
-  "secrets_needed": ["GEMINI_API_KEY"],
-  "manifest_version": "2.0"
+  "secrets_needed": [
+    "GEMINI_API_KEY"
+  ],
+  "manifest_version": "2.0",
+  "knowledge_enabled": true
 }
