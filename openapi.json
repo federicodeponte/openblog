@@ -1,0 +1,698 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OpenBlog Neo API",
+    "description": "\n## AI-Powered Blog Generation Pipeline\n\nOpenBlog Neo generates high-quality, SEO-optimized blog articles using Google's Gemini AI.\n\n### Pipeline Stages\n\n1. **Stage 1: Set Context** - Analyze company website, extract context\n2. **Stage 2: Blog Generation** - Generate article content + images\n3. **Stage 3: Quality Check** - Apply quality fixes\n4. **Stage 4: URL Verification** - Validate and fix dead links\n5. **Stage 5: Internal Links** - Add internal linking\n\n### Features\n\n- \ud83d\ude80 Parallel article processing\n- \ud83d\uddbc\ufe0f AI-generated images (optional)\n- \ud83d\udcca Multiple export formats (HTML, Markdown, JSON, CSV, XLSX, PDF)\n- \ud83d\udd17 Automatic internal linking\n- \u2705 URL verification and replacement\n    ",
+    "contact": {
+      "name": "OpenBlog Neo",
+      "url": "https://github.com/federicodeponte/openblog"
+    },
+    "license": {
+      "name": "MIT"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "description": "Check API health status.",
+        "operationId": "health_check__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check (alias)",
+        "description": "Health check endpoint (alias for root).",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Start a new pipeline job",
+        "description": "Start a new blog generation pipeline job.\n\nThe job runs asynchronously in the background. Use the returned `job_id`\nto check status via `GET /api/v1/jobs/{job_id}`.\n\n**Example request:**\n```json\n{\n    \"keywords\": [\"AI in healthcare\", \"Machine learning basics\"],\n    \"company_url\": \"https://example.com\",\n    \"language\": \"en\",\n    \"market\": \"US\",\n    \"skip_images\": false,\n    \"export_formats\": [\"html\", \"json\"]\n}\n```",
+        "operationId": "create_job_api_v1_jobs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "List all jobs",
+        "description": "List all pipeline jobs, sorted by creation time (newest first).",
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max jobs to return",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Max jobs to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobStatusResponse"
+                  },
+                  "title": "Response List Jobs Api V1 Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get job status",
+        "description": "Get the status and result of a pipeline job.\n\nReturns full result when job is completed.",
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Delete a job",
+        "description": "Delete a job and its results.",
+        "operationId": "delete_job_api_v1_jobs__job_id__delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/articles": {
+      "get": {
+        "tags": [
+          "Articles"
+        ],
+        "summary": "List articles for a job",
+        "description": "Get a preview of all articles generated by a job.",
+        "operationId": "list_job_articles_api_v1_jobs__job_id__articles_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArticlePreviewResponse"
+                  },
+                  "title": "Response List Job Articles Api V1 Jobs  Job Id  Articles Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/articles/{keyword}/html": {
+      "get": {
+        "tags": [
+          "Articles"
+        ],
+        "summary": "Get article HTML",
+        "description": "Get the rendered HTML for a specific article.",
+        "operationId": "get_article_html_api_v1_jobs__job_id__articles__keyword__html_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Keyword"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/generate": {
+      "post": {
+        "tags": [
+          "Sync"
+        ],
+        "summary": "Generate article (synchronous)",
+        "description": "Generate articles synchronously (blocking).\n\n**Warning:** This endpoint blocks until all articles are generated.\nFor large batches, use the async job endpoint instead.\n\nReturns the full pipeline result directly.",
+        "operationId": "generate_sync_api_v1_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ArticlePreviewResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "keyword": {
+            "type": "string",
+            "title": "Keyword"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "meta_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Description"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "keyword",
+          "status"
+        ],
+        "title": "ArticlePreviewResponse",
+        "description": "Response model for article preview."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "healthy"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "1.0.0"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp"
+        ],
+        "title": "HealthResponse",
+        "description": "Health check response."
+      },
+      "JobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Unique job identifier"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus",
+            "description": "Current job status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Status message"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "Job creation timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "message",
+          "created_at"
+        ],
+        "title": "JobResponse",
+        "description": "Response model for job creation."
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "JobStatus",
+        "description": "Job status enumeration."
+      },
+      "JobStatusResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "Progress details"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result",
+            "description": "Pipeline result (when completed)"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message (when failed)"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobStatusResponse",
+        "description": "Response model for job status check."
+      },
+      "PipelineRequest": {
+        "properties": {
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Keywords",
+            "description": "List of keywords to generate articles for (1-20)",
+            "example": [
+              "AI in healthcare",
+              "Machine learning basics"
+            ]
+          },
+          "company_url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Company Url",
+            "description": "Company website URL for context",
+            "example": "https://example.com"
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 10,
+            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+            "title": "Language",
+            "description": "Target language code (ISO 639-1)",
+            "default": "en",
+            "example": "en"
+          },
+          "market": {
+            "type": "string",
+            "maxLength": 10,
+            "pattern": "^[A-Z]{2,3}$",
+            "title": "Market",
+            "description": "Target market code",
+            "default": "US",
+            "example": "US"
+          },
+          "skip_images": {
+            "type": "boolean",
+            "title": "Skip Images",
+            "description": "Skip image generation to speed up processing",
+            "default": false
+          },
+          "max_parallel": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Parallel",
+            "description": "Max concurrent articles (1-10, None = unlimited)"
+          },
+          "export_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Export Formats",
+            "description": "Export formats: html, markdown, json, csv, xlsx, pdf",
+            "default": [
+              "html",
+              "json"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "keywords",
+          "company_url"
+        ],
+        "title": "PipelineRequest",
+        "description": "Request model for starting a pipeline job."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

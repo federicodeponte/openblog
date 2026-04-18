@@ -92,7 +92,7 @@ python api.py
 **API Documentation:**
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
-- OpenAPI JSON: http://localhost:8000/openapi.json
+- OpenAPI JSON: http://localhost:8000/openapi.json (at runtime); **`openapi.json` is also committed at the repo root** for GitHub-based imports (e.g. Floom) that expect a spec in the repository.
 
 ## REST API
 
